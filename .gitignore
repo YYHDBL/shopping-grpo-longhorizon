@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+.DS_Store
+.venv/
+venv/
+
+outputs/
+checkpoints/
+models/
+experiments/
+
+docs/references/papers/*.pdf
