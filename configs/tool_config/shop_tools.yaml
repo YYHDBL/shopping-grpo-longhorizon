@@ -1,0 +1,244 @@
+{
+  "tools": [
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_search_products_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "search_products",
+          "description": "Search products by query.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_open_product_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "open_product",
+          "description": "Open a product by ASIN.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "asin": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "asin"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_select_option_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "select_option",
+          "description": "Select a product option.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_view_description_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "view_description",
+          "description": "Open the description page.",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_view_features_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "view_features",
+          "description": "Open the features page.",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_view_reviews_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "view_reviews",
+          "description": "Open the reviews page.",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_view_attributes_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "view_attributes",
+          "description": "Open the attributes page.",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_next_page_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "next_page",
+          "description": "Go to the next search page.",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_prev_page_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "prev_page",
+          "description": "Go to the previous search page.",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_back_to_search_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "back_to_search",
+          "description": "Return to search page.",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_buy_now_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "buy_now",
+          "description": "Buy the currently selected product.",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.verl_shop_tools.Shop_think_Tool",
+      "config": {
+        "type": "native"
+      },
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "think",
+          "description": "Record private reasoning.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "note"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
