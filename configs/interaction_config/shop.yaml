@@ -1,0 +1,12 @@
+{
+  "interaction": [
+    {
+      "name": "shop",
+      "class_name": "shopping_grpo.verl_shop_interaction.ShopInteraction",
+      "config": {
+        "base_url": "http://127.0.0.1:7001",
+        "max_turns": 6
+      }
+    }
+  ]
+}

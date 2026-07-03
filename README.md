@@ -8,6 +8,7 @@ Current status:
 - Stage 1: ShopSimulator local HTTP smoke test.
 - Stage 2: semantic shopping tools, HTTP adapter, and mock rollout JSONL.
 - Stage 3: veRL-style shopping context, static tool classes, and tool config.
+- Stage 4: veRL-style ShopInteraction, tiny task JSONL, and dry-run configs.
 
 Run unit tests:
 
@@ -29,4 +30,5 @@ See:
 - `docs/runbooks/stage_1_smoke_test.md`
 - `docs/runbooks/stage_2_adapter.md`
 - `docs/runbooks/stage_3_verl_shop_wiring.md`
+- `docs/runbooks/stage_4_shop_interaction_dryrun.md`
 - `docs/plans/2026-07-02-stage-2-shopsimulator-adapter.md`

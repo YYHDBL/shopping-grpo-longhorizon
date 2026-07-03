@@ -1,0 +1,53 @@
+{
+  "data": {
+    "train_files": "experiments/shop_tiny/train.parquet",
+    "val_files": "experiments/shop_tiny/val.parquet",
+    "train_batch_size": 2,
+    "max_prompt_length": 2048,
+    "max_response_length": 2048,
+    "return_raw_chat": true,
+    "tool_config_path": "configs/tool_config/shop_tools.yaml"
+  },
+  "actor_rollout_ref": {
+    "model": {
+      "path": "Qwen/Qwen2.5-1.5B-Instruct"
+    },
+    "rollout": {
+      "name": "vllm",
+      "mode": "async",
+      "agent": {
+        "default_agent_loop": "tool_agent"
+      },
+      "multi_turn": {
+        "enable": true,
+        "format": "hermes",
+        "max_user_turns": 4,
+        "max_assistant_turns": 4,
+        "tool_config_path": "configs/tool_config/shop_tools.yaml",
+        "interaction_config_path": "configs/interaction_config/shop.yaml"
+      },
+      "n": 2,
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "tensor_model_parallel_size": 1,
+      "gpu_memory_utilization": 0.45,
+      "max_model_len": 4096
+    }
+  },
+  "algorithm": {
+    "adv_estimator": "grpo",
+    "kl_ctrl": {
+      "kl_coef": 0.01
+    }
+  },
+  "trainer": {
+    "total_training_steps": 5,
+    "save_freq": 5,
+    "test_freq": 5,
+    "default_local_dir": "experiments/shop_tiny/checkpoints",
+    "project_name": "shopping-grpo-longhorizon",
+    "experiment_name": "shop_tiny_grpo",
+    "n_gpus_per_node": 1,
+    "nnodes": 1
+  }
+}
