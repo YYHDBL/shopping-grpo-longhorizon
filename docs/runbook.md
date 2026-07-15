@@ -1,16 +1,24 @@
-# Runbook
+# 运行手册
 
-Run all commands from this repository after exporting `.env` and starting ShopSimulator as described in the README.
+在本仓库根目录执行以下命令；先按 README 导出 `.env` 并启动 ShopSimulator。
 
-## Task input
+## 任务清单
 
-The collector accepts JSONL rows with either a top-level `task_id` or the older `extra_info.interaction_kwargs.task_id`. A row may also include a public `prompt`; the collector still appends the instruction returned by the environment reset. Do not put goals, answers, or reward metadata in this file.
+完整任务清单不要手写。用下列命令从 ShopSimulator 实际使用的商品数据和 goal 构造逻辑导出，生成的 id 从 0 连续递增，顺序与环境一致：
 
-## Resumable collection
+```bash
+../ShopSimulator/shop_env/.venv-clean/bin/python scripts/export_shop_task_ids.py \
+  --shopsim-root ../ShopSimulator/shop_env \
+  --output data/shop_tasks.jsonl
+```
 
-`--attempts-per-task N` defines attempt indexes `0` through `N - 1` for every task. A raw output already containing a `(task_id, attempt_index)` pair is skipped on the next invocation. A legacy row without `attempt_index` is treated as attempt 0.
+导出器会保护已有文件；确认覆盖时使用 `--force`。采集器接受顶层 `task_id`，也兼容旧格式 `extra_info.interaction_kwargs.task_id`。一行可以包含公开 `prompt`，但环境 reset 返回的用户需求仍会被追加。任务文件中绝不能写入 goal、答案或 reward 元数据。
 
-For a 6000 accepted target, start with a task list substantially larger than 6000 and a fixed attempt budget. Example: 8000 task ids with four attempts gives at most 32000 raw trajectories.
+## 可断点续跑的采集
+
+`--attempts-per-task N` 为每个任务定义 `0` 到 `N - 1` 的尝试编号。raw 输出中已有 `(task_id, attempt_index)` 的记录会在下一次运行时跳过；没有 `attempt_index` 的旧记录视为 attempt 0。
+
+目标为 6000 条 accepted 时，任务数应显著多于 6000，并设定固定尝试次数。当前环境可导出 23,421 个 task_id；例如前 8,000 个任务、每个任务 4 次尝试，最多产生 32,000 条 raw trajectory。
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
@@ -27,8 +35,8 @@ PYTHONPATH=src python3 scripts/build_sft_data.py \
   --sft outputs/accepted_6000/sft_openai_messages.jsonl
 ```
 
-If collection is interrupted, rerun the exact collector command. It appends only missing task-attempt pairs; then rerun the builder, which regenerates all four derived files from the complete raw file.
+采集中断后，原样重跑采集命令即可：它只追加缺失的 task-attempt 对；之后重跑构造器，它会从完整 raw 文件重新生成四类派生产物。
 
-Read `outputs/accepted_6000/stats.json` after every build. Stop when `accepted >= 6000`. If all planned attempts finish below target, add more task ids or raise the attempt budget, for example from 4 to 8; existing attempts remain untouched and only indexes 4 through 7 run.
+每次构造后读取 `outputs/accepted_6000/stats.json`，在 `accepted >= 6000` 时停止。如果已计划的尝试全部完成仍未达到目标，增加 task_id 范围或把尝试次数从 4 提升到 8；已有结果不会变化，只会新增 attempt 4 到 7。
 
-Keep a separate output directory for each sampling configuration. This makes model, temperature, task source, and retry policy auditable without adding a collector framework.
+每个采样配置使用独立输出目录，以便追溯模型、温度、任务来源和重试策略，无需额外采集框架。
