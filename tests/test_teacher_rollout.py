@@ -5,6 +5,7 @@ from pathlib import Path
 
 from shopping_grpo.teacher_rollout import (
     OpenAIChatClient,
+    SYSTEM_PROMPT,
     collect_tasks,
     collect_for_task,
     completed_task_attempts,
@@ -74,6 +75,17 @@ def assistant_tool(name, arguments, call_id="call_1"):
 
 
 class TeacherRolloutTest(unittest.TestCase):
+    def test_default_prompt_requires_tool_driven_purchase(self):
+        """默认提示词应适配单轮任务，并约束模型完成购买。"""
+        self.assertIn("单轮购物任务", SYSTEM_PROMPT)
+        self.assertIn("不得向用户追问", SYSTEM_PROMPT)
+        self.assertIn("当前页面显示的可点击按钮", SYSTEM_PROMPT)
+        self.assertIn("select_option", SYSTEM_PROMPT)
+        self.assertIn("buy_now", SYSTEM_PROMPT)
+        self.assertIn("Buy Now 是否出现在最新 observation", SYSTEM_PROMPT)
+        self.assertIn("返回商品详情页", SYSTEM_PROMPT)
+        self.assertIn("不要在购买前输出最终答复", SYSTEM_PROMPT)
+
     def test_collect_for_task_executes_openai_tool_calls_until_done(self):
         client = MockClient(
             [
