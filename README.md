@@ -7,7 +7,7 @@ Current status:
 
 - Stage 1: ShopSimulator local HTTP smoke test.
 - Stage 2: OpenAI-compatible teacher rollout collector and raw trajectory JSONL.
-- Stage 3: veRL-style shopping context, static tool classes, and tool config.
+- Stage 3: deterministic accepted/rejected filtering and SFT messages JSONL.
 - Stage 4: veRL-style ShopInteraction, tiny task JSONL, and dry-run configs.
 
 Run unit tests:
@@ -36,6 +36,17 @@ PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --output outputs/rollouts/teacher_raw.jsonl \
   --model deepseek-chat \
   --max-steps 8
+```
+
+Build Stage 3 accepted trajectories and SFT-ready OpenAI messages:
+
+```bash
+PYTHONPATH=src python3 scripts/build_sft_data.py \
+  --raw outputs/rollouts/teacher_raw.jsonl \
+  --accepted outputs/sft/accepted_trajectories.jsonl \
+  --rejected outputs/sft/rejected_trajectories.jsonl \
+  --stats outputs/sft/reject_stats.json \
+  --sft outputs/sft/openai_messages.jsonl
 ```
 
 See:
