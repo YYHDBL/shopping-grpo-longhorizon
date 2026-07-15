@@ -64,15 +64,15 @@ cp data/tasks.example.jsonl data/shop_tasks.jsonl
 ```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/one/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 8
+  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 16
 
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/ten/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 8
+  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 16
 
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/hundred/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 8
+  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 16
 ```
 
 将任一 raw JSONL 构造成 accepted、rejected、统计和标准 OpenAI messages JSONL：

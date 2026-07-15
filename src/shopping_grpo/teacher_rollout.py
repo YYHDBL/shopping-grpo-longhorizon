@@ -112,7 +112,7 @@ def collect_for_task(
     client,
     env_factory=ShopAgentEnv,
     base_url="http://127.0.0.1:5000",
-    max_steps=8,
+    max_steps=16,
     tools=None,
     attempt_index=0,
 ):
@@ -203,7 +203,7 @@ def collect_tasks(
     client,
     output_path,
     base_url,
-    max_steps=8,
+    max_steps=16,
     env_factory=ShopAgentEnv,
     attempts_per_task=1,
 ):
