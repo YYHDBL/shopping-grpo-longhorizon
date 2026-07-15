@@ -1,130 +1,112 @@
-from html.parser import HTMLParser
-from urllib.parse import quote, urljoin
+"""Structured client for one leased ShopSimulator environment."""
+
+import json
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-def _parse_action(action):
-    if "[" not in action or not action.endswith("]"):
-        return action, ""
-    name, rest = action.split("[", 1)
-    return name, rest[:-1]
+class ShopHttpError(RuntimeError):
+    """The HTTP request did not reach a usable ShopSimulator response."""
 
 
-class _ShopPageParser(HTMLParser):
-    def __init__(self, base_url):
-        super().__init__(convert_charrefs=True)
-        self.base_url = base_url.rstrip("/")
-        self.text = []
-        self.action_urls = {}
-        self.current_form_action = None
-        self.current_button_action = None
-        self.current_link_href = None
-        self.capture_reward = False
-        self.reward_text = []
-
-    def handle_starttag(self, tag, attrs):
-        attrs = dict(attrs)
-        if tag == "form":
-            action = attrs.get("action")
-            self.current_form_action = urljoin(self.base_url, action) if action else None
-        elif tag == "button":
-            self.current_button_action = self.current_form_action
-        elif tag == "a":
-            href = attrs.get("href")
-            self.current_link_href = urljoin(self.base_url, href) if href else None
-        elif tag == "input" and attrs.get("type") == "radio":
-            value = attrs.get("value")
-            data_url = attrs.get("data-url")
-            if value and data_url:
-                self.action_urls[value] = urljoin(self.base_url, data_url)
-        elif attrs.get("id") == "reward":
-            self.capture_reward = True
-
-    def handle_endtag(self, tag):
-        if tag == "form":
-            self.current_form_action = None
-        elif tag == "button":
-            self.current_button_action = None
-        elif tag == "a":
-            self.current_link_href = None
-        elif tag == "div" and self.capture_reward:
-            self.capture_reward = False
-
-    def handle_data(self, data):
-        value = data.strip()
-        if not value:
-            return
-        self.text.append(value)
-        if self.capture_reward:
-            self.reward_text.append(value)
-        if self.current_button_action:
-            self.action_urls[value] = self.current_button_action
-        if self.current_link_href:
-            self.action_urls[value] = self.current_link_href
+class ShopEnvironmentError(RuntimeError):
+    """ShopSimulator accepted HTTP request but reported an environment error."""
 
 
-class ShopHttpEnv:
-    def __init__(self, base_url="http://127.0.0.1:7001", timeout=60):
+class ShopProtocolError(RuntimeError):
+    """ShopSimulator response did not match its structured API contract."""
+
+
+class ShopEnvironmentStateError(RuntimeError):
+    """The client lifecycle was used out of order."""
+
+
+class ShopAgentEnv:
+    """One trajectory's exclusive ShopSimulator API lease."""
+
+    def __init__(self, base_url="http://127.0.0.1:5000", timeout=60, transport=None):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.session_id = None
-        self.state = {}
+        self.transport = transport
+        self.env_idx = None
+        self.done = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            self.release()
+        except Exception:
+            if exc_type is None:
+                raise
+        return False
 
     def reset(self, task_id):
-        self.session_id = f"fixed_{int(task_id)}"
-        return self._fetch(f"{self.base_url}/{self.session_id}")
+        if self.env_idx is not None:
+            raise ShopEnvironmentStateError("Environment is already leased; release it before reset")
+
+        result = self._call({"action": "reset", "idx": int(task_id)})
+        env_idx = result.get("env_idx")
+        if not isinstance(env_idx, int):
+            raise ShopProtocolError("reset response is missing integer env_idx")
+        self.env_idx = env_idx
+        self.done = False
+        return result
 
     def step(self, action):
-        url = self.build_action_url(action)
-        if url is None:
-            return {
-                "observation": f"Error: action is not available: {action}",
-                "html": "",
-                "url": "",
-                "status_code": 0,
-                "reward": 0.0,
-                "done": False,
-                "available_actions": self.state.get("available_actions", []),
-                "action_urls": self.state.get("action_urls", {}),
-            }
-        return self._fetch(url)
+        if not isinstance(action, str) or not action:
+            raise ValueError("action must be a non-empty string")
+        if self.done:
+            raise ShopEnvironmentStateError("Environment is already done; release it before reset")
+        result = self._call(
+            {"action": "interact", "env_idx": self._leased_env_idx(), "response": action}
+        )
+        self.done = bool(result.get("done", False))
+        return result
 
-    def build_action_url(self, action):
-        name, arg = _parse_action(action)
-        if name == "search":
-            keywords = quote(repr([arg]))
-            return f"{self.base_url}/search_results/{self.session_id}/{keywords}/1"
-        if name == "click":
-            return self.state.get("action_urls", {}).get(arg)
-        return None
+    def release(self):
+        if self.env_idx is None:
+            return None
 
-    def parse_observation(self, html):
-        parser = _ShopPageParser(self.base_url)
-        parser.feed(html)
-        reward = 0.0
-        for token in parser.reward_text:
-            try:
-                reward = float(token)
-                break
-            except ValueError:
-                pass
-        return {
-            "observation": " ".join(parser.text),
-            "available_actions": list(parser.action_urls),
-            "action_urls": parser.action_urls,
-            "reward": reward,
-            "done": reward > 0.0,
-        }
+        env_idx = self.env_idx
+        try:
+            return self._call({"action": "release_one", "env_idx": env_idx})
+        finally:
+            self.env_idx = None
+            self.done = False
 
-    def _fetch(self, url):
-        request = Request(url, headers={"User-Agent": "shopping-grpo-adapter/0.1"})
+    def _leased_env_idx(self):
+        if self.env_idx is None:
+            raise ShopEnvironmentStateError("reset must succeed before step")
+        return self.env_idx
+
+    def _call(self, payload):
+        try:
+            response = self._send(payload)
+        except (HTTPError, URLError, OSError) as exc:
+            raise ShopHttpError(f"ShopSimulator HTTP request failed: {exc}") from exc
+
+        if not isinstance(response, dict):
+            raise ShopProtocolError("ShopSimulator response must be a JSON object")
+        result = response.get("result")
+        if not isinstance(result, dict):
+            raise ShopProtocolError("ShopSimulator response is missing object result")
+        if result.get("error"):
+            raise ShopEnvironmentError(str(result["error"]))
+        return result
+
+    def _send(self, payload):
+        endpoint = f"{self.base_url}/api/shop_agent"
+        if self.transport is not None:
+            return self.transport(endpoint, payload, self.timeout)
+
+        body = json.dumps(payload).encode("utf-8")
+        request = Request(
+            endpoint,
+            data=body,
+            headers={"Content-Type": "application/json", "User-Agent": "shopping-grpo/0.2"},
+            method="POST",
+        )
         with urlopen(request, timeout=self.timeout) as response:
-            html = response.read().decode("utf-8", errors="replace")
-            parsed = self.parse_observation(html)
-            self.state = {
-                **parsed,
-                "html": html,
-                "url": response.geturl(),
-                "status_code": response.status,
-            }
-            return self.state
+            return json.loads(response.read().decode("utf-8"))

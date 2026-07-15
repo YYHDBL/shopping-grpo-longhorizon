@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 
 from shopping_grpo.rollout import make_step, make_trajectory, write_jsonl
-from shopping_grpo.shop_http_env import ShopHttpEnv
+from shopping_grpo.shop_http_env import ShopAgentEnv
 from shopping_grpo.shop_tools import tool_call_to_action
 
 
@@ -12,31 +12,25 @@ def build_mock_actions(query):
 
 
 def run_rollout(base_url, task_id, query, output):
-    env = ShopHttpEnv(base_url=base_url)
-    initial = env.reset(task_id)
     steps = []
-
-    for tool_call in build_mock_actions(query):
-        action = tool_call_to_action(tool_call["name"], tool_call["parameters"])
-        if action is None:
-            continue
-        result = env.step(action)
-        steps.append(
-            make_step(
-                tool_name=tool_call["name"],
-                parameters=tool_call["parameters"],
-                action=action,
-                observation={
-                    "text": result["observation"],
-                    "available_actions": result["available_actions"],
-                    "url": result["url"],
-                    "status_code": result["status_code"],
-                },
-                reward=result["reward"],
-                done=result["done"],
-                info={"status_code": result["status_code"]},
+    with ShopAgentEnv(base_url=base_url) as env:
+        initial = env.reset(task_id)
+        for tool_call in build_mock_actions(query):
+            action = tool_call_to_action(tool_call["name"], tool_call["parameters"])
+            if action is None:
+                continue
+            result = env.step(action)
+            steps.append(
+                make_step(
+                    tool_name=tool_call["name"],
+                    parameters=tool_call["parameters"],
+                    action=action,
+                    observation={"text": result["instruction"]},
+                    reward=result["reward"],
+                    done=result["done"],
+                    info={},
+                )
             )
-        )
 
     final_reward = steps[-1]["reward"] if steps else 0.0
     done = steps[-1]["done"] if steps else False
@@ -45,7 +39,7 @@ def run_rollout(base_url, task_id, query, output):
         steps=steps,
         final_reward=final_reward,
         done=done,
-        instruction_text=initial["observation"],
+        instruction_text=initial["instruction"],
     )
     write_jsonl(output, [trajectory])
     return output
@@ -53,7 +47,7 @@ def run_rollout(base_url, task_id, query, output):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run a one-query ShopSimulator mock rollout.")
-    parser.add_argument("--base-url", default="http://127.0.0.1:7001")
+    parser.add_argument("--base-url", default="http://127.0.0.1:5000")
     parser.add_argument("--task-id", type=int, default=0)
     parser.add_argument("--query", default="乳胶枕")
     parser.add_argument("--output", type=Path, default=Path("outputs/rollouts/stage2_mock.jsonl"))

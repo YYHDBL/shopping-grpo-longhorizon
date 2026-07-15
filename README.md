@@ -20,7 +20,7 @@ Run the Stage 2 mock rollout after starting ShopSimulator:
 
 ```bash
 PYTHONPATH=src python3 scripts/run_mock_shop_rollout.py \
-  --base-url http://127.0.0.1:7001 \
+  --base-url http://127.0.0.1:5000 \
   --task-id 0 \
   --query '乳胶枕'
 ```

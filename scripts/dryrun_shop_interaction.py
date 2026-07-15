@@ -22,8 +22,11 @@ class FakeEnv:
             "status_code": 200,
         }
 
+    def release(self):
+        return None
 
-async def _run_dryrun(query, fake_env=True, base_url="http://127.0.0.1:7001"):
+
+async def _run_dryrun(query, fake_env=True, base_url="http://127.0.0.1:5000"):
     config = {"base_url": base_url}
     if fake_env:
         config["env_factory"] = FakeEnv
@@ -48,7 +51,7 @@ def run_fake_dryrun(query="乳胶枕"):
 def main():
     parser = argparse.ArgumentParser(description="Dry-run ShopInteraction with one search tool call.")
     parser.add_argument("--query", default="乳胶枕")
-    parser.add_argument("--base-url", default="http://127.0.0.1:7001")
+    parser.add_argument("--base-url", default="http://127.0.0.1:5000")
     parser.add_argument("--fake-env", action="store_true")
     args = parser.parse_args()
     result = asyncio.run(_run_dryrun(args.query, fake_env=args.fake_env, base_url=args.base_url))

@@ -61,7 +61,7 @@ class ShopToolBase(BaseTool):
             status_code = None
         else:
             result = env.step(action)
-            obs = result.get("observation", "")
+            obs = result.get("instruction", result.get("observation", ""))
             inc_reward = float(result.get("reward", 0.0))
             done = bool(result.get("done", False))
             status_code = result.get("status_code")

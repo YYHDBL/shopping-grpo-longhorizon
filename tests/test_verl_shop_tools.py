@@ -23,6 +23,16 @@ class FakeEnv:
         }
 
 
+class StructuredFakeEnv(FakeEnv):
+    def step(self, action):
+        self.actions.append(action)
+        return {
+            "instruction": "structured search result",
+            "reward": 0.0,
+            "done": False,
+        }
+
+
 class VerlShopToolsTest(unittest.TestCase):
     def test_search_products_executes_env_step(self):
         env = FakeEnv()
@@ -63,6 +73,20 @@ class VerlShopToolsTest(unittest.TestCase):
         self.assertEqual(reward, 0.0)
         self.assertEqual(info["tool"], "think")
         self.assertEqual(state["num_tool_calls"], 1)
+
+    def test_search_products_returns_structured_api_instruction(self):
+        env = StructuredFakeEnv()
+        state = make_initial_state(task_id=0)
+        env_token = CURRENT_SHOP_ENV.set(env)
+        state_token = CURRENT_SHOP_STATE.set(state)
+        try:
+            tool = Shop_search_products_Tool({}, {"function": {"name": "search_products"}})
+            response, _, _ = asyncio.run(tool.execute("instance-1", {"query": "乳胶枕"}))
+        finally:
+            CURRENT_SHOP_STATE.reset(state_token)
+            CURRENT_SHOP_ENV.reset(env_token)
+
+        self.assertEqual(response.text, "structured search result")
 
 
 if __name__ == "__main__":

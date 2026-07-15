@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import uuid4
 
-from shopping_grpo.shop_http_env import ShopHttpEnv
+from shopping_grpo.shop_http_env import ShopAgentEnv
 from shopping_grpo.verl_shop_context import CURRENT_SHOP_ENV, CURRENT_SHOP_STATE, make_initial_state
 
 try:
@@ -23,17 +23,23 @@ def _latest_assistant_content(messages):
 class ShopInteraction(BaseInteraction):
     def __init__(self, config):
         super().__init__(config)
-        self.base_url = config.get("base_url", "http://127.0.0.1:7001")
+        self.base_url = config.get("base_url", "http://127.0.0.1:5000")
         self.max_turns = int(config.get("max_turns", 6))
-        self.env_factory = config.get("env_factory", ShopHttpEnv)
+        self.env_factory = config.get("env_factory", ShopAgentEnv)
         self._instance_dict = {}
 
     async def start_interaction(self, instance_id: Optional[str] = None, task_id=0, **kwargs):
         instance_id = instance_id or str(uuid4())
         env = self.env_factory(base_url=self.base_url)
-        initial = env.reset(int(task_id))
+        try:
+            initial = env.reset(int(task_id))
+        except Exception:
+            release = getattr(env, "release", None)
+            if release is not None:
+                release()
+            raise
         state = make_initial_state(task_id)
-        state["initial_observation"] = initial.get("observation", "")
+        state["initial_observation"] = initial.get("instruction", "")
 
         CURRENT_SHOP_ENV.set(env)
         CURRENT_SHOP_STATE.set(state)
@@ -59,4 +65,6 @@ class ShopInteraction(BaseInteraction):
         return max(0.0, min(1.0, score))
 
     async def finalize_interaction(self, instance_id, **kwargs):
-        self._instance_dict.pop(instance_id, None)
+        entry = self._instance_dict.pop(instance_id, None)
+        if entry is not None:
+            entry["env"].release()

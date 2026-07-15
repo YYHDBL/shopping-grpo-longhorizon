@@ -9,10 +9,24 @@ class FakeEnv:
     def __init__(self, base_url=None):
         self.base_url = base_url
         self.reset_task_ids = []
+        self.released = False
 
     def reset(self, task_id):
         self.reset_task_ids.append(task_id)
         return {"observation": "instruction text", "reward": 0.0, "done": False}
+
+    def release(self):
+        self.released = True
+
+
+class FailingEnv(FakeEnv):
+    released = 0
+
+    def reset(self, task_id):
+        raise RuntimeError("reset failed")
+
+    def release(self):
+        type(self).released += 1
 
 
 class ShopInteractionTest(unittest.TestCase):
@@ -46,6 +60,15 @@ class ShopInteractionTest(unittest.TestCase):
         asyncio.run(interaction.finalize_interaction("i-1"))
 
         self.assertNotIn("i-1", interaction._instance_dict)
+
+    def test_start_failure_releases_environment(self):
+        FailingEnv.released = 0
+        interaction = ShopInteraction({"env_factory": FailingEnv})
+
+        with self.assertRaisesRegex(RuntimeError, "reset failed"):
+            asyncio.run(interaction.start_interaction("i-1", task_id=0))
+
+        self.assertEqual(FailingEnv.released, 1)
 
 
 if __name__ == "__main__":
