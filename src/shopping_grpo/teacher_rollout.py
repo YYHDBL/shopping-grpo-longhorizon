@@ -136,7 +136,7 @@ def collect_for_task(
         trajectory["messages"] = messages
         tool_schemas = tools or SHOP_TOOL_SCHEMAS
 
-        for step_index in range(int(max_steps)):
+        while len(trajectory["steps"]) < int(max_steps):
             assistant = client.complete(messages, tool_schemas)
             messages.append(assistant)
             tool_calls = assistant.get("tool_calls") or []
@@ -144,7 +144,10 @@ def collect_for_task(
                 trajectory["status"] = "assistant_final"
                 break
             for tool_call in tool_calls:
-                step = _execute_tool_call(env, tool_call, step_index)
+                if len(trajectory["steps"]) >= int(max_steps):
+                    trajectory["status"] = "max_steps"
+                    return trajectory
+                step = _execute_tool_call(env, tool_call, len(trajectory["steps"]))
                 trajectory["steps"].append(step)
                 messages.append(_tool_message(tool_call, step))
                 if step["done"]:

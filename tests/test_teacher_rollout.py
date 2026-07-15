@@ -43,6 +43,12 @@ class FailingEnv(FakeEnv):
         raise RuntimeError("env exploded")
 
 
+class NonTerminalEnv(FakeEnv):
+    def step(self, action):
+        self.actions.append(action)
+        return {"instruction": "keep going", "reward": 0.0, "done": False}
+
+
 class MockClient:
     def __init__(self, messages):
         self.messages = list(messages)
@@ -140,6 +146,40 @@ class TeacherRolloutTest(unittest.TestCase):
 
         self.assertEqual([row["task_id"] for row in rows], [1, 2])
         self.assertEqual(len(written), 1)
+
+    def test_collect_for_task_caps_multiple_tool_calls_by_max_steps(self):
+        client = MockClient(
+            [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": f"call_{index}",
+                            "type": "function",
+                            "function": {
+                                "name": "search_products",
+                                "arguments": json.dumps({"query": f"乳胶枕{index}"}, ensure_ascii=False),
+                            },
+                        }
+                        for index in range(3)
+                    ],
+                }
+            ]
+        )
+        env = NonTerminalEnv()
+
+        traj = collect_for_task(
+            {"task_id": 9},
+            client=client,
+            env_factory=lambda **kwargs: env,
+            base_url="http://shop.test",
+            max_steps=2,
+        )
+
+        self.assertEqual(traj["status"], "max_steps")
+        self.assertEqual(len(traj["steps"]), 2)
+        self.assertEqual(len(env.actions), 2)
 
     def test_load_tasks_reads_interaction_task_id(self):
         with tempfile.TemporaryDirectory() as tmpdir:
