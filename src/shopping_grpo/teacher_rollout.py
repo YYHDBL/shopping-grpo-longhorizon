@@ -89,7 +89,7 @@ def load_tasks(path):
     return tasks
 
 
-def completed_task_ids(path):
+def completed_task_attempts(path):
     path = Path(path)
     if not path.exists():
         return set()
@@ -103,7 +103,7 @@ def completed_task_ids(path):
             except json.JSONDecodeError:
                 continue
             if "task_id" in row:
-                done.add(int(row["task_id"]))
+                done.add((int(row["task_id"]), int(row.get("attempt_index", 0))))
     return done
 
 
@@ -114,10 +114,12 @@ def collect_for_task(
     base_url="http://127.0.0.1:5000",
     max_steps=8,
     tools=None,
+    attempt_index=0,
 ):
     trajectory = {
         "trajectory_id": str(uuid4()),
         "task_id": int(task["task_id"]),
+        "attempt_index": int(attempt_index),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "running",
         "messages": [],
@@ -196,21 +198,35 @@ def append_jsonl(path, rows):
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def collect_tasks(tasks, client, output_path, base_url, max_steps=8, env_factory=ShopAgentEnv):
-    done = completed_task_ids(output_path)
+def collect_tasks(
+    tasks,
+    client,
+    output_path,
+    base_url,
+    max_steps=8,
+    env_factory=ShopAgentEnv,
+    attempts_per_task=1,
+):
+    attempts_per_task = int(attempts_per_task)
+    if attempts_per_task < 1:
+        raise ValueError("attempts_per_task must be at least 1")
+    done = completed_task_attempts(output_path)
     written = []
     for task in tasks:
-        if int(task["task_id"]) in done:
-            continue
-        trajectory = collect_for_task(
-            task,
-            client=client,
-            env_factory=env_factory,
-            base_url=base_url,
-            max_steps=max_steps,
-        )
-        append_jsonl(output_path, [trajectory])
-        written.append(trajectory)
+        task_id = int(task["task_id"])
+        for attempt_index in range(attempts_per_task):
+            if (task_id, attempt_index) in done:
+                continue
+            trajectory = collect_for_task(
+                task,
+                client=client,
+                env_factory=env_factory,
+                base_url=base_url,
+                max_steps=max_steps,
+                attempt_index=attempt_index,
+            )
+            append_jsonl(output_path, [trajectory])
+            written.append(trajectory)
     return written
 
 

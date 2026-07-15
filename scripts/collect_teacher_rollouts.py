@@ -8,9 +8,9 @@ from shopping_grpo.teacher_rollout import OpenAIChatClient, collect_tasks, load_
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Collect raw teacher rollouts with OpenAI tool calls.")
-    parser.add_argument("--tasks", type=Path, default=Path("data/shop_tiny_tasks.jsonl"))
+    parser.add_argument("--tasks", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("outputs/rollouts/teacher_raw.jsonl"))
-    parser.add_argument("--base-url", default="http://127.0.0.1:5000")
+    parser.add_argument("--base-url", default=os.environ.get("SHOPSIM_BASE_URL", "http://127.0.0.1:5000"))
     parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", "deepseek-chat"))
     parser.add_argument("--llm-base-url", default=os.environ.get("OPENAI_BASE_URL"))
     parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY"))
@@ -18,6 +18,7 @@ def parse_args():
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--max-steps", type=int, default=8)
+    parser.add_argument("--attempts-per-task", type=int, default=1)
     parser.add_argument("--limit", type=int, default=None)
     return parser.parse_args()
 
@@ -47,6 +48,7 @@ def main():
         output_path=args.output,
         base_url=args.base_url,
         max_steps=args.max_steps,
+        attempts_per_task=args.attempts_per_task,
     )
     print(f"wrote {len(written)} trajectories to {args.output}")
 

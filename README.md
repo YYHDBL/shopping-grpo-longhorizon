@@ -1,58 +1,97 @@
-# Shopping-GRPO-LongHorizon
+# Shopping SFT Data Preparation
 
-Local baseline project for adapting ShopSimulator into an agentic GRPO-style
-long-horizon shopping environment.
+ShopSimulator 单轮购物任务的 SFT 数据准备链路：
 
-Current status:
-
-- Stage 1: ShopSimulator local HTTP smoke test.
-- Stage 2: OpenAI-compatible teacher rollout collector and raw trajectory JSONL.
-- Stage 3: deterministic accepted/rejected filtering and SFT messages JSONL.
-- Stage 4: veRL-style ShopInteraction, tiny task JSONL, and dry-run configs.
-
-Run unit tests:
-
-```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'
+```text
+ShopSimulator -> Teacher rollout -> 规则验收 -> OpenAI tool-calling SFT JSONL
 ```
 
-Run the Stage 2 mock rollout after starting ShopSimulator:
+当前仓库只负责收集和构造 SFT-ready 数据。不包含 LoRA SFT、GRPO、PPO、Reward Model、LLM Grader 或额外 Agent 框架。
+
+## 目录
+
+- `src/shopping_grpo/shop_http_env.py`：每条 trajectory 独占的结构化 ShopSimulator API 客户端。
+- `src/shopping_grpo/shop_tools.py`：Teacher rollout 与未来训练共用的 OpenAI tool schema。
+- `src/shopping_grpo/teacher_rollout.py`：OpenAI-compatible Teacher rollout 和断点续跑。
+- `src/shopping_grpo/sft_data.py`：确定性验收和 SFT JSONL 构造。
+- `scripts/`：环境 smoke、采集和数据构造入口。
+- `data/tasks.example.jsonl`：无隐藏信息的最小任务清单示例。
+- `docs/data_contract.md`：四类输出文件的字段约定。
+- `docs/runbook.md`：端到端运行和 6000 accepted 采集方式。
+
+## 配置
+
+项目只依赖 Python 标准库。ShopSimulator 需要作为相邻仓库单独启动。
 
 ```bash
-PYTHONPATH=src python3 scripts/run_mock_shop_rollout.py \
-  --base-url http://127.0.0.1:5000 \
-  --task-id 0 \
-  --query '乳胶枕'
+cp .env.example .env
+set -a
+. ./.env
+set +a
 ```
 
-Collect Stage 2 teacher rollouts after starting ShopSimulator:
+`.env` 不会被 Python 自动读取；上述命令将它导出到当前 shell。不要提交 `.env`。
+
+在另一终端，从本仓库根目录启动一个单环境 ShopSimulator 服务：
 
 ```bash
-export OPENAI_BASE_URL=https://api.deepseek.com/v1
-export OPENAI_API_KEY=...
+cd ../ShopSimulator/shop_env/shop_env
+PYTHONPATH=.. SHOPSIM_ALLOW_LINEAR_SEARCH=1 \
+  ../.venv-clean/bin/python -u -c \
+  'import pack_api; pack_api.env_max_num=1; pack_api.initialize_environments(); pack_api.app.run(host="127.0.0.1", port=5000)'
+```
+
+若 ShopSimulator 尚未有可用环境，先在其 `shop_env/` 下新建干净环境再安装依赖；不要修补旧的损坏环境。
+
+回到本仓库，先验证环境接口：
+
+```bash
+PYTHONPATH=src python3 scripts/smoke_shop_env.py \
+  --base-url "$SHOPSIM_BASE_URL" --task-id 0 \
+  --actions 'search[乳胶枕]'
+```
+
+## 采集与构造
+
+准备任务清单。每行至少有一个公开任务 id；环境在 `reset` 后提供用户需求，因此不需要把 goal、标准答案或 reward 写入任务文件。
+
+```bash
+cp data/tasks.example.jsonl data/shop_tasks.jsonl
+```
+
+1、10、100 个任务分别只需更换 `--limit`。以下命令的 `--limit` 限制任务数，不保证同样数量的 accepted 轨迹。
+
+```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
-  --base-url http://127.0.0.1:5000 \
-  --tasks data/shop_tiny_tasks.jsonl \
-  --output outputs/rollouts/teacher_raw.jsonl \
-  --model deepseek-chat \
-  --max-steps 8
+  --tasks data/shop_tasks.jsonl --output outputs/one/raw.jsonl \
+  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 8
+
+PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
+  --tasks data/shop_tasks.jsonl --output outputs/ten/raw.jsonl \
+  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 8
+
+PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
+  --tasks data/shop_tasks.jsonl --output outputs/hundred/raw.jsonl \
+  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 8
 ```
 
-Build Stage 3 accepted trajectories and SFT-ready OpenAI messages:
+将任一 raw JSONL 构造成 accepted、rejected、统计和标准 OpenAI messages JSONL：
 
 ```bash
 PYTHONPATH=src python3 scripts/build_sft_data.py \
-  --raw outputs/rollouts/teacher_raw.jsonl \
-  --accepted outputs/sft/accepted_trajectories.jsonl \
-  --rejected outputs/sft/rejected_trajectories.jsonl \
-  --stats outputs/sft/reject_stats.json \
-  --sft outputs/sft/openai_messages.jsonl
+  --raw outputs/hundred/raw.jsonl \
+  --accepted outputs/hundred/accepted.jsonl \
+  --rejected outputs/hundred/rejected.jsonl \
+  --stats outputs/hundred/stats.json \
+  --sft outputs/hundred/sft_openai_messages.jsonl
 ```
 
-See:
+完整的 6000 accepted 续跑和验收说明见 [docs/runbook.md](docs/runbook.md)。
 
-- `docs/runbooks/stage_1_smoke_test.md`
-- `docs/runbooks/stage_2_adapter.md`
-- `docs/runbooks/stage_3_verl_shop_wiring.md`
-- `docs/runbooks/stage_4_shop_interaction_dryrun.md`
-- `docs/plans/2026-07-02-stage-2-shopsimulator-adapter.md`
+## 验证
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -v
+python3 -m py_compile src/shopping_grpo/*.py scripts/*.py
+git diff --check
+```

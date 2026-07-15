@@ -7,7 +7,7 @@ from shopping_grpo.teacher_rollout import (
     OpenAIChatClient,
     collect_tasks,
     collect_for_task,
-    completed_task_ids,
+    completed_task_attempts,
     load_tasks,
 )
 
@@ -117,7 +117,7 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertEqual(traj["steps"][0]["env_action"], "search[乳胶枕]")
         self.assertTrue(env.released)
 
-    def test_completed_task_ids_supports_resume(self):
+    def test_completed_task_attempts_treats_legacy_rows_as_attempt_zero(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "raw.jsonl"
             output.write_text(
@@ -126,7 +126,7 @@ class TeacherRolloutTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            self.assertEqual(completed_task_ids(output), {1, 3})
+            self.assertEqual(completed_task_attempts(output), {(1, 0), (3, 0)})
 
     def test_collect_tasks_skips_existing_output_rows(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -146,6 +146,36 @@ class TeacherRolloutTest(unittest.TestCase):
 
         self.assertEqual([row["task_id"] for row in rows], [1, 2])
         self.assertEqual(len(written), 1)
+
+    def test_collect_tasks_resumes_missing_attempts_for_each_task(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "raw.jsonl"
+            output.write_text(
+                json.dumps({"task_id": 1, "attempt_index": 0, "trajectory_id": "old"}) + "\n",
+                encoding="utf-8",
+            )
+            client = MockClient(
+                [
+                    assistant_tool("buy_now", {}, "call_1"),
+                    assistant_tool("buy_now", {}, "call_2"),
+                    assistant_tool("buy_now", {}, "call_3"),
+                ]
+            )
+
+            written = collect_tasks(
+                [{"task_id": 1}, {"task_id": 2}],
+                client=client,
+                output_path=output,
+                base_url="http://shop.test",
+                max_steps=1,
+                env_factory=FakeEnv,
+                attempts_per_task=2,
+            )
+
+        self.assertEqual(
+            [(row["task_id"], row["attempt_index"]) for row in written],
+            [(1, 1), (2, 0), (2, 1)],
+        )
 
     def test_collect_for_task_caps_multiple_tool_calls_by_max_steps(self):
         client = MockClient(
