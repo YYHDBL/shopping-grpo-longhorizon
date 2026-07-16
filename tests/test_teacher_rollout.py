@@ -10,6 +10,7 @@ from shopping_grpo.teacher_rollout import (
     collect_for_task,
     completed_task_attempts,
     load_tasks,
+    rollout_interrupted,
 )
 
 
@@ -24,7 +25,17 @@ class FakeEnv:
     def step(self, action):
         self.actions.append(action)
         if action == "search[乳胶枕]":
-            return {"instruction": "results page", "reward": 0.0, "done": False}
+            return {
+                "instruction": "results [SEP] 100000000001 [SEP] 乳胶枕",
+                "reward": 0.0,
+                "done": False,
+            }
+        if action == "click[100000000001]":
+            return {
+                "instruction": 'detail\n\n可点击的按钮: ["Buy Now"]',
+                "reward": 0.0,
+                "done": False,
+            }
         return {
             "instruction": "done page",
             "reward": 1.0,
@@ -85,11 +96,13 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertIn("Buy Now 是否出现在最新 observation", SYSTEM_PROMPT)
         self.assertIn("返回商品详情页", SYSTEM_PROMPT)
         self.assertIn("不要在购买前输出最终答复", SYSTEM_PROMPT)
+        self.assertIn("开始选择规格后", SYSTEM_PROMPT)
 
     def test_collect_for_task_executes_openai_tool_calls_until_done(self):
         client = MockClient(
             [
                 assistant_tool("search_products", {"query": "乳胶枕"}, "call_search"),
+                assistant_tool("open_product", {"asin": "100000000001"}, "call_open"),
                 assistant_tool("buy_now", {}, "call_buy"),
             ]
         )
@@ -105,12 +118,48 @@ class TeacherRolloutTest(unittest.TestCase):
 
         self.assertEqual(traj["status"], "done")
         self.assertTrue(traj["trajectory_id"])
-        self.assertEqual(env.actions, ["search[乳胶枕]", "click[Buy Now]"])
+        self.assertEqual(env.actions, ["search[乳胶枕]", "click[100000000001]", "click[Buy Now]"])
         self.assertTrue(env.released)
         self.assertEqual(traj["steps"][0]["tool_call"]["function"]["name"], "search_products")
-        self.assertEqual(traj["steps"][1]["env_action"], "click[Buy Now]")
+        self.assertEqual(traj["steps"][2]["env_action"], "click[Buy Now]")
         self.assertEqual(traj["terminal_result"]["purchase"]["asin"], "A1")
         self.assertTrue(any(message["role"] == "tool" for message in traj["messages"]))
+
+    def test_collect_for_task_blocks_invalid_click_then_keeps_clean_recovery(self):
+        client = MockClient(
+            [
+                assistant_tool("search_products", {"query": "乳胶枕"}, "call_search"),
+                assistant_tool("open_product", {"asin": "100000000001"}, "call_open"),
+                assistant_tool("view_features", {}, "call_invalid"),
+                assistant_tool("buy_now", {}, "call_buy"),
+            ]
+        )
+        env = FakeEnv()
+
+        traj = collect_for_task(
+            {"task_id": 10},
+            client=client,
+            env_factory=lambda **kwargs: env,
+            base_url="http://shop.test",
+            max_steps=5,
+        )
+
+        self.assertEqual(traj["status"], "done")
+        self.assertEqual(env.actions, ["search[乳胶枕]", "click[100000000001]", "click[Buy Now]"])
+        self.assertEqual(len(traj["blocked_tool_calls"]), 1)
+        self.assertEqual(traj["blocked_tool_calls"][0]["reason"], "click_not_in_previous_observation")
+        self.assertNotIn(
+            "view_features",
+            [step["tool_name"] for step in traj["steps"]],
+        )
+        self.assertTrue(
+            any(
+                message.get("role") == "tool"
+                and message.get("tool_call_id") == "call_invalid"
+                and message.get("runtime_action_guard") is True
+                for message in traj["messages"]
+            )
+        )
 
     def test_collect_for_task_keeps_exception_trajectory_and_releases_env(self):
         client = MockClient([assistant_tool("search_products", {"query": "乳胶枕"})])
@@ -128,6 +177,10 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertIn("env exploded", traj["error"]["message"])
         self.assertEqual(traj["steps"][0]["env_action"], "search[乳胶枕]")
         self.assertTrue(env.released)
+
+    def test_rollout_interrupted_raises_keyboard_interrupt_for_finally_release(self):
+        with self.assertRaises(KeyboardInterrupt):
+            rollout_interrupted(None, None)
 
     def test_completed_task_attempts_treats_legacy_rows_as_attempt_zero(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -29,15 +29,20 @@ def tool_message(call_id, name, content):
 
 
 def accepted_trajectory():
+    asin = "100000000001"
     messages = [
         {"role": "system", "content": "use tools"},
         {"role": "user", "content": "帮我买乳胶枕"},
         assistant_tool("search_products", {"query": "乳胶枕"}, "call_1"),
-        tool_message("call_1", "search_products", "results"),
-        assistant_tool("open_product", {"asin": "A1"}, "call_2"),
-        tool_message("call_2", "open_product", "detail"),
+        tool_message("call_1", "search_products", f"results [SEP] {asin} [SEP] 乳胶枕"),
+        assistant_tool("open_product", {"asin": asin}, "call_2"),
+        tool_message(
+            "call_2",
+            "open_product",
+            'detail\n\n可点击的按钮: ["满天星", "Buy Now"]',
+        ),
         assistant_tool("select_option", {"value": "满天星"}, "call_3"),
-        tool_message("call_3", "select_option", "selected"),
+        tool_message("call_3", "select_option", 'selected\n\n可点击的按钮: ["Buy Now"]'),
         assistant_tool("buy_now", {}, "call_4"),
         tool_message("call_4", "buy_now", "done"),
     ]
@@ -58,7 +63,7 @@ def accepted_trajectory():
             {
                 "tool_name": "open_product",
                 "tool_call": messages[4]["tool_calls"][0],
-                "env_action": "click[A1]",
+                "env_action": f"click[{asin}]",
                 "done": False,
             },
             {
@@ -78,8 +83,8 @@ def accepted_trajectory():
             "done": True,
             "over": True,
             "reward_detail": {"r_type": 1, "r_att": 1, "r_option": 1, "r_price": True},
-            "goal": {"asin": "A1"},
-            "purchase": {"asin": "A1"},
+            "goal": {"asin": asin},
+            "purchase": {"asin": asin},
         },
     }
 
@@ -124,9 +129,70 @@ class SftDataTest(unittest.TestCase):
         self.assertFalse(accepted)
         self.assertIn("message_2.multiple_tool_calls", reasons)
 
+    def test_acceptance_reasons_rejects_product_not_on_latest_page(self):
+        traj = accepted_trajectory()
+        stale_asin = "999999999999"
+        traj["steps"][1]["tool_call"]["function"]["arguments"] = json.dumps({"asin": stale_asin})
+        traj["steps"][1]["env_action"] = f"click[{stale_asin}]"
+
+        accepted, reasons = acceptance_reasons(traj)
+
+        self.assertFalse(accepted)
+        self.assertIn("step_1.click_not_in_previous_observation", reasons)
+
+    def test_acceptance_reasons_rejects_option_not_on_latest_page(self):
+        traj = accepted_trajectory()
+        traj["messages"][5]["content"] = 'detail\n\n可点击的按钮: ["别的规格", "Buy Now"]'
+
+        accepted, reasons = acceptance_reasons(traj)
+
+        self.assertFalse(accepted)
+        self.assertIn("step_2.click_not_in_previous_observation", reasons)
+
+    def test_acceptance_reasons_rejects_buy_not_on_latest_page(self):
+        traj = accepted_trajectory()
+        traj["messages"][7]["content"] = 'selected\n\n可点击的按钮: ["满天星"]'
+
+        accepted, reasons = acceptance_reasons(traj)
+
+        self.assertFalse(accepted)
+        self.assertIn("step_3.click_not_in_previous_observation", reasons)
+
+    def test_acceptance_reasons_ignores_runtime_guard_when_finding_previous_observation(self):
+        traj = accepted_trajectory()
+        invalid = assistant_tool("view_features", {}, "blocked_call")
+        traj["messages"][6:6] = [
+            invalid,
+            {
+                "role": "tool",
+                "tool_call_id": "blocked_call",
+                "name": "view_features",
+                "content": "未执行：当前页面没有 Features。",
+                "runtime_action_guard": True,
+            },
+        ]
+        traj["blocked_tool_calls"] = [{"tool_call": invalid["tool_calls"][0]}]
+
+        accepted, reasons = acceptance_reasons(traj)
+
+        self.assertTrue(accepted)
+        self.assertEqual(reasons, [])
+
     def test_build_sft_row_keeps_only_training_messages_and_tools(self):
         traj = accepted_trajectory()
         traj["messages"][2]["reasoning_content"] = "这是 Teacher 的内部推理，只用于 rollout 连贯性。"
+        invalid = assistant_tool("view_features", {}, "blocked_call")
+        traj["messages"][4:4] = [
+            invalid,
+            {
+                "role": "tool",
+                "tool_call_id": "blocked_call",
+                "name": "view_features",
+                "content": "未执行：当前页面没有 Features。",
+                "runtime_action_guard": True,
+            },
+        ]
+        traj["blocked_tool_calls"] = [{"tool_call": invalid["tool_calls"][0]}]
         traj["messages"][-1]["content"] = "Purchased. Target. Goal. Reward: 1.0. Reward Details."
 
         row = build_sft_row(traj)
@@ -139,6 +205,7 @@ class SftDataTest(unittest.TestCase):
         self.assertNotIn('"purchase"', payload)
         self.assertIn("<think>这是 Teacher 的内部推理，只用于 rollout 连贯性。</think>", payload)
         self.assertNotIn("reasoning_content", payload)
+        self.assertNotIn("未执行", payload)
         self.assertEqual(row["messages"][-1]["content"], "购买已完成。")
         self.assertNotIn("Reward", payload)
         self.assertNotIn("Goal", payload)

@@ -4,6 +4,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from shopping_grpo.action_validation import RUNTIME_GUARD_FIELD, action_reject_reason
 from shopping_grpo.shop_tools import SHOP_TOOL_SCHEMAS, tool_call_to_action
 
 
@@ -41,7 +42,7 @@ def acceptance_reasons(trajectory):
             reasons.append(f"message_{index}.multiple_tool_calls")
 
     for index, step in enumerate(steps):
-        reason = _tool_step_reject_reason(step)
+        reason = _tool_step_reject_reason(trajectory, step)
         if reason:
             reasons.append(f"step_{index}.{reason}")
 
@@ -50,15 +51,31 @@ def acceptance_reasons(trajectory):
 
 def build_sft_row(trajectory):
     terminal_tool_call_id = _terminal_tool_call_id(trajectory)
+    blocked_call_ids = {
+        (blocked.get("tool_call") or {}).get("id")
+        for blocked in trajectory.get("blocked_tool_calls") or []
+    }
+    blocked_call_ids.discard(None)
     return {
         "trajectory_id": trajectory.get("trajectory_id"),
         "task_id": trajectory.get("task_id"),
         "messages": [
             _sanitize_message(message, terminal_tool_call_id)
             for message in trajectory.get("messages", [])
+            if not _is_blocked_training_message(message, blocked_call_ids)
         ],
         "tools": SHOP_TOOL_SCHEMAS,
     }
+
+
+def _is_blocked_training_message(message, blocked_call_ids):
+    if message.get(RUNTIME_GUARD_FIELD) is True:
+        return True
+    if message.get("role") == "tool" and message.get("tool_call_id") in blocked_call_ids:
+        return True
+    if message.get("role") == "assistant":
+        return any(call.get("id") in blocked_call_ids for call in message.get("tool_calls") or [])
+    return False
 
 
 def process_raw_trajectories(raw_path, accepted_path, rejected_path, stats_path, sft_path):
@@ -96,7 +113,8 @@ def process_raw_trajectories(raw_path, accepted_path, rejected_path, stats_path,
     return summary
 
 
-def _tool_step_reject_reason(step):
+def _tool_step_reject_reason(trajectory, step):
+    """校验工具参数与动作，并确保点击来自紧邻的环境 observation。"""
     tool_call = step.get("tool_call") or {}
     function = tool_call.get("function") or {}
     name = function.get("name")
@@ -117,7 +135,28 @@ def _tool_step_reject_reason(step):
         return "unknown_or_invalid_tool"
     if expected_action != step.get("env_action"):
         return "env_action_mismatch"
-    return None
+    return action_reject_reason(name, arguments, _previous_observation(trajectory, tool_call.get("id")))
+
+
+def _previous_observation(trajectory, tool_call_id):
+    """返回此工具调用前最近一次 tool message，缺失时返回空字符串。"""
+    if not tool_call_id:
+        return ""
+    messages = trajectory.get("messages") or []
+    for index, message in enumerate(messages):
+        if message.get("role") != "assistant":
+            continue
+        calls = message.get("tool_calls") or []
+        if not any(call.get("id") == tool_call_id for call in calls):
+            continue
+        for previous in reversed(messages[:index]):
+            if previous.get(RUNTIME_GUARD_FIELD) is True:
+                continue
+            if previous.get("role") == "tool":
+                content = previous.get("content")
+                return content if isinstance(content, str) else ""
+        return ""
+    return ""
 
 
 def _terminal_tool_call_id(trajectory):

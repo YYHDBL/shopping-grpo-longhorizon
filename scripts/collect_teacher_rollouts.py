@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import signal
 from pathlib import Path
 
-from shopping_grpo.teacher_rollout import OpenAIChatClient, collect_tasks, load_tasks
+from shopping_grpo.teacher_rollout import (
+    OpenAIChatClient,
+    collect_tasks,
+    load_tasks,
+    rollout_interrupted,
+)
 
 
 def parse_args():
@@ -31,6 +37,10 @@ def main():
         raise SystemExit("--llm-base-url or OPENAI_BASE_URL is required")
     if not args.api_key:
         raise SystemExit("--api-key or OPENAI_API_KEY is required")
+
+    # SIGTERM 默认会跳过 finally；转为 KeyboardInterrupt 后当前 trajectory 会 release。
+    signal.signal(signal.SIGTERM, rollout_interrupted)
+    signal.signal(signal.SIGINT, rollout_interrupted)
 
     tasks = load_tasks(args.tasks)
     if args.limit is not None:
