@@ -68,6 +68,8 @@ class OpenAIChatClient:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
+            # 避免 Cloudflare 将 Python urllib 默认客户端识别为自动化流量。
+            "User-Agent": "shopping-grpo-longhorizon/0.1",
         }
         url = f"{self.base_url}/chat/completions"
         if self.transport is not None:

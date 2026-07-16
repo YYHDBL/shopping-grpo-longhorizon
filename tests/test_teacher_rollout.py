@@ -273,6 +273,7 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertEqual(captured["payload"]["tools"], [{"type": "function"}])
         self.assertEqual(captured["payload"]["temperature"], 0.2)
         self.assertEqual(captured["headers"]["Authorization"], "Bearer secret")
+        self.assertEqual(captured["headers"]["User-Agent"], "shopping-grpo-longhorizon/0.1")
 
     def test_openai_client_thinking_mode_keeps_reasoning_for_tool_follow_up(self):
         captured = {}
