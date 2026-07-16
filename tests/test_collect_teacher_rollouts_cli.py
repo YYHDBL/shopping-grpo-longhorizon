@@ -15,6 +15,12 @@ class CollectTeacherRolloutsCliTest(unittest.TestCase):
 
         self.assertEqual(args.max_steps, 30)
 
+    def test_default_timeout_allows_long_thinking_tool_calls(self):
+        with patch.object(sys, "argv", ["collect_teacher_rollouts.py", "--tasks", "tasks.jsonl"]):
+            args = parse_args()
+
+        self.assertEqual(args.timeout, 180)
+
     def test_thinking_flag_enables_explicit_deepseek_thinking_mode(self):
         with patch.object(
             sys,

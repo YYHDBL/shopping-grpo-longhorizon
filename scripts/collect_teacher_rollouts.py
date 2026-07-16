@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY"))
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
-    parser.add_argument("--timeout", type=int, default=60)
+    parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--max-steps", type=int, default=30)
     parser.add_argument("--thinking", action="store_true", help="开启 DeepSeek thinking mode")
     parser.add_argument("--reasoning-effort", choices=("high", "max"), default="high")
