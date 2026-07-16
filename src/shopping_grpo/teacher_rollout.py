@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from shopping_grpo.action_validation import action_guard_tool_message, action_reject_reason
-from shopping_grpo.shop_http_env import ShopAgentEnv
+from shopping_grpo.shop_http_env import ShopAgentEnv, ShopEnvironmentError, ShopHttpError
 from shopping_grpo.shop_tools import SHOP_TOOL_SCHEMAS, tool_call_to_action
 
 
@@ -103,6 +103,10 @@ class ToolExecutionError(RuntimeError):
         self.original = original
 
 
+class CollectionInfrastructureError(RuntimeError):
+    """环境租约未恢复时，阻止采集器继续污染后续任务。"""
+
+
 def load_tasks(path):
     tasks = []
     with Path(path).open(encoding="utf-8") as f:
@@ -161,6 +165,7 @@ def collect_for_task(
         "final_reward": 0.0,
         "done": False,
         "error": None,
+        "release_error": None,
     }
     env = env_factory(base_url=base_url)
     try:
@@ -243,13 +248,13 @@ def collect_for_task(
     finally:
         try:
             env.release()
-        except Exception:
-            if trajectory["error"] is None:
-                trajectory["error"] = {
-                    "type": "ReleaseError",
-                    "message": traceback.format_exc(),
-                }
-                trajectory["status"] = "error"
+        except Exception as exc:
+            trajectory["release_error"] = {
+                "type": exc.__class__.__name__,
+                "message": str(exc),
+                "traceback": traceback.format_exc(),
+            }
+            trajectory["status"] = "environment_release_failed"
     return trajectory
 
 
@@ -290,7 +295,25 @@ def collect_tasks(
             )
             append_jsonl(output_path, [trajectory])
             written.append(trajectory)
+            if _is_infrastructure_failure(trajectory):
+                raise CollectionInfrastructureError(
+                    "ShopSimulator infrastructure failure; collection stopped before the next task"
+                )
     return written
+
+
+def _is_infrastructure_failure(trajectory):
+    """只在环境不可用或租约未释放时中断；普通任务失败仍保留并继续。"""
+    if trajectory.get("release_error"):
+        return True
+    error = trajectory.get("error") or {}
+    error_type = error.get("type")
+    if error_type == ShopHttpError.__name__:
+        return True
+    return (
+        error_type == ShopEnvironmentError.__name__
+        and "Unable to get available environment resource" in error.get("message", "")
+    )
 
 
 def _execute_tool_call(env, tool_call, step_index):

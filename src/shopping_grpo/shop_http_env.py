@@ -70,11 +70,10 @@ class ShopAgentEnv:
             return None
 
         env_idx = self.env_idx
-        try:
-            return self._call({"action": "release_one", "env_idx": env_idx})
-        finally:
-            self.env_idx = None
-            self.done = False
+        result = self._call({"action": "release_one", "env_idx": env_idx})
+        self.env_idx = None
+        self.done = False
+        return result
 
     def _leased_env_idx(self):
         if self.env_idx is None:

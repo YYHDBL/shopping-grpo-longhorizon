@@ -125,6 +125,22 @@ class ShopAgentEnvTest(unittest.TestCase):
         )
         self.assertIsNone(env.env_idx)
 
+    def test_failed_release_keeps_lease_for_recovery(self):
+        """释放请求未送达时，客户端必须保留租约编号供上层恢复。"""
+        transport = FakeTransport(
+            [
+                {"result": {"instruction": "找乳胶枕", "env_idx": 3, "idx": 0}},
+                OSError("connection reset"),
+            ]
+        )
+        env = shop_http_env.ShopAgentEnv(transport=transport)
+        env.reset(0)
+
+        with self.assertRaises(shop_http_env.ShopHttpError):
+            env.release()
+
+        self.assertEqual(env.env_idx, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

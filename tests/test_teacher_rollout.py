@@ -3,7 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from shopping_grpo.shop_http_env import ShopEnvironmentError
 from shopping_grpo.teacher_rollout import (
+    CollectionInfrastructureError,
     OpenAIChatClient,
     SYSTEM_PROMPT,
     collect_tasks,
@@ -59,6 +61,16 @@ class NonTerminalEnv(FakeEnv):
     def step(self, action):
         self.actions.append(action)
         return {"instruction": "keep going", "reward": 0.0, "done": False}
+
+
+class ReleaseFailingEnv(FakeEnv):
+    def release(self):
+        raise OSError("ShopSimulator unavailable during release")
+
+
+class UnavailableEnv(FakeEnv):
+    def reset(self, task_id):
+        raise ShopEnvironmentError("Unable to get available environment resource, please try again later")
 
 
 class MockClient:
@@ -241,6 +253,47 @@ class TeacherRolloutTest(unittest.TestCase):
             [(row["task_id"], row["attempt_index"]) for row in written],
             [(1, 1), (2, 0), (2, 1)],
         )
+
+    def test_collect_tasks_stops_after_a_release_failure(self):
+        """环境租约未释放时，不能继续消耗后续 task。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "raw.jsonl"
+            client = MockClient([{"role": "assistant", "content": "stop"}])
+
+            with self.assertRaises(CollectionInfrastructureError):
+                collect_tasks(
+                    [{"task_id": 1}, {"task_id": 2}],
+                    client=client,
+                    output_path=output,
+                    base_url="http://shop.test",
+                    env_factory=ReleaseFailingEnv,
+                )
+
+            rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual([row["task_id"] for row in rows], [1])
+        self.assertEqual(rows[0]["status"], "environment_release_failed")
+        self.assertEqual(rows[0]["release_error"]["type"], "OSError")
+
+    def test_collect_tasks_stops_after_environment_resource_is_unavailable(self):
+        """服务报告无可用环境时，不能把其余 task 误记成失败轨迹。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "raw.jsonl"
+            client = MockClient([])
+
+            with self.assertRaises(CollectionInfrastructureError):
+                collect_tasks(
+                    [{"task_id": 1}, {"task_id": 2}],
+                    client=client,
+                    output_path=output,
+                    base_url="http://shop.test",
+                    env_factory=UnavailableEnv,
+                )
+
+            rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual([row["task_id"] for row in rows], [1])
+        self.assertEqual(rows[0]["error"]["type"], "ShopEnvironmentError")
 
     def test_collect_for_task_serializes_multiple_tool_calls_before_execution(self):
         client = MockClient(
