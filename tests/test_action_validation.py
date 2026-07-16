@@ -17,6 +17,18 @@ class ActionValidationTest(unittest.TestCase):
 
         self.assertIsNone(action_reject_reason("select_option", {"value": "糖果粉"}, observation))
 
+    def test_post_selection_rejects_navigation_even_when_current_page_shows_button(self):
+        observation = '商品页\n\n可点击的按钮: ["Description", "Buy Now"]'
+
+        reason = action_reject_reason(
+            "view_description",
+            {},
+            observation,
+            selection_started=True,
+        )
+
+        self.assertEqual(reason, "action_not_allowed_after_option_selection")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -233,6 +233,58 @@ class TeacherRolloutTest(unittest.TestCase):
             )
         )
 
+    def test_collect_for_task_blocks_navigation_after_option_selection(self):
+        """选择规格后，即使页面仍显示详情按钮，也只能继续选规格或购买。"""
+        class OptionEnv(FakeEnv):
+            def step(self, action):
+                self.actions.append(action)
+                if action == "search[乳胶枕]":
+                    return {"instruction": "results [SEP] 100000000001", "reward": 0.0, "done": False}
+                if action == "click[100000000001]":
+                    return {
+                        "instruction": 'detail\n\n可点击的按钮: ["满天星", "Description", "Buy Now"]',
+                        "reward": 0.0,
+                        "done": False,
+                    }
+                if action == "click[满天星]":
+                    return {
+                        "instruction": 'selected\n\n可点击的按钮: ["Description", "Buy Now"]',
+                        "reward": 0.0,
+                        "done": False,
+                    }
+                if action == "click[Buy Now]":
+                    return {
+                        "instruction": "done",
+                        "reward": 1.0,
+                        "done": True,
+                        "over": True,
+                        "purchase": {"asin": "A1"},
+                        "reward_detail": {"r_type": 1, "r_att": 1, "r_option": 1, "r_price": 1},
+                    }
+                raise AssertionError(action)
+
+        client = MockClient(
+            [
+                assistant_tool("search_products", {"query": "乳胶枕"}, "call_search"),
+                assistant_tool("open_product", {"asin": "100000000001"}, "call_open"),
+                assistant_tool("select_option", {"value": "满天星"}, "call_option"),
+                assistant_tool("view_description", {}, "call_wrong_navigation"),
+                assistant_tool("buy_now", {}, "call_buy"),
+            ]
+        )
+        env = OptionEnv()
+
+        traj = collect_for_task({"task_id": 12}, client=client, env_factory=lambda **kwargs: env)
+
+        self.assertEqual(traj["status"], "done")
+        self.assertEqual([step["env_action"] for step in traj["steps"]], [
+            "search[乳胶枕]",
+            "click[100000000001]",
+            "click[满天星]",
+            "click[Buy Now]",
+        ])
+        self.assertEqual(traj["blocked_tool_calls"][0]["reason"], "action_not_allowed_after_option_selection")
+
     def test_collect_for_task_allows_recovery_after_separated_guard_rejections(self):
         """合法动作应重置守卫计数，避免累计三次历史点击提前中止。"""
         client = MockClient(
