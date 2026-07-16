@@ -189,7 +189,7 @@ class TeacherRolloutTest(unittest.TestCase):
             [(1, 1), (2, 0), (2, 1)],
         )
 
-    def test_collect_for_task_caps_multiple_tool_calls_by_max_steps(self):
+    def test_collect_for_task_serializes_multiple_tool_calls_before_execution(self):
         client = MockClient(
             [
                 {
@@ -206,7 +206,8 @@ class TeacherRolloutTest(unittest.TestCase):
                         }
                         for index in range(3)
                     ],
-                }
+                },
+                assistant_tool("search_products", {"query": "第二次观察后搜索"}, "call_after_observation"),
             ]
         )
         env = NonTerminalEnv()
@@ -221,7 +222,12 @@ class TeacherRolloutTest(unittest.TestCase):
 
         self.assertEqual(traj["status"], "max_steps")
         self.assertEqual(len(traj["steps"]), 2)
-        self.assertEqual(len(env.actions), 2)
+        self.assertEqual(env.actions, ["search[乳胶枕0]", "search[第二次观察后搜索]"])
+        self.assertEqual(len(traj["messages"][2]["tool_calls"]), 1)
+        self.assertEqual(
+            [call["id"] for call in traj["tool_call_truncations"][0]["dropped_tool_calls"]],
+            ["call_1", "call_2"],
+        )
 
     def test_load_tasks_reads_interaction_task_id(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -112,6 +112,7 @@ class SftDataTest(unittest.TestCase):
     def test_build_sft_row_keeps_only_training_messages_and_tools(self):
         traj = accepted_trajectory()
         traj["messages"][2]["reasoning_content"] = "这是 Teacher 的内部推理，只用于 rollout 连贯性。"
+        traj["messages"][-1]["content"] = "Purchased. Target. Goal. Reward: 1.0. Reward Details."
 
         row = build_sft_row(traj)
 
@@ -122,6 +123,9 @@ class SftDataTest(unittest.TestCase):
         self.assertNotIn('"goal"', payload)
         self.assertNotIn('"purchase"', payload)
         self.assertNotIn("内部推理", payload)
+        self.assertEqual(row["messages"][-1]["content"], "购买已完成。")
+        self.assertNotIn("Reward", payload)
+        self.assertNotIn("Goal", payload)
         self.assertEqual(row["messages"][-2]["tool_calls"][0]["function"]["name"], "buy_now")
 
     def test_process_raw_trajectories_writes_accepted_rejected_and_sft_jsonl(self):

@@ -142,6 +142,7 @@ def collect_for_task(
         "status": "running",
         "messages": [],
         "steps": [],
+        "tool_call_truncations": [],
         "initial_result": {},
         "terminal_result": {},
         "final_reward": 0.0,
@@ -158,6 +159,15 @@ def collect_for_task(
 
         while len(trajectory["steps"]) < int(max_steps):
             assistant = client.complete(messages, tool_schemas)
+            assistant, dropped_tool_calls = _enforce_serial_tool_call(assistant)
+            if dropped_tool_calls:
+                trajectory["tool_call_truncations"].append(
+                    {
+                        "message_index": len(messages),
+                        "kept_tool_call_id": assistant["tool_calls"][0].get("id"),
+                        "dropped_tool_calls": dropped_tool_calls,
+                    }
+                )
             messages.append(assistant)
             tool_calls = assistant.get("tool_calls") or []
             if not tool_calls:
@@ -287,6 +297,16 @@ def _tool_message(tool_call, step):
         "name": step["tool_name"],
         "content": step["observation"],
     }
+
+
+def _enforce_serial_tool_call(assistant):
+    """每轮只把一个工具调用交给环境，防止在旧 observation 上批量点击。"""
+    tool_calls = assistant.get("tool_calls") or []
+    if len(tool_calls) <= 1:
+        return assistant, []
+    serial_assistant = dict(assistant)
+    serial_assistant["tool_calls"] = [tool_calls[0]]
+    return serial_assistant, list(tool_calls[1:])
 
 
 def _initial_messages(task, initial):

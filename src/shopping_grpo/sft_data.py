@@ -45,10 +45,14 @@ def acceptance_reasons(trajectory):
 
 
 def build_sft_row(trajectory):
+    terminal_tool_call_id = _terminal_tool_call_id(trajectory)
     return {
         "trajectory_id": trajectory.get("trajectory_id"),
         "task_id": trajectory.get("task_id"),
-        "messages": [_sanitize_message(message) for message in trajectory.get("messages", [])],
+        "messages": [
+            _sanitize_message(message, terminal_tool_call_id)
+            for message in trajectory.get("messages", [])
+        ],
         "tools": SHOP_TOOL_SCHEMAS,
     }
 
@@ -112,8 +116,20 @@ def _tool_step_reject_reason(step):
     return None
 
 
-def _sanitize_message(message):
+def _terminal_tool_call_id(trajectory):
+    """返回环境结束的工具调用 id，用于移除终局隐藏反馈。"""
+    if not trajectory.get("done"):
+        return None
+    terminal_steps = [step for step in trajectory.get("steps", []) if step.get("done")]
+    if not terminal_steps:
+        return None
+    return (terminal_steps[-1].get("tool_call") or {}).get("id")
+
+
+def _sanitize_message(message, terminal_tool_call_id=None):
     clean = {key: message[key] for key in ALLOWED_MESSAGE_KEYS if key in message}
+    if clean.get("role") == "tool" and clean.get("tool_call_id") == terminal_tool_call_id:
+        clean["content"] = "购买已完成。"
     if "tool_calls" in clean:
         clean["tool_calls"] = [_sanitize_tool_call(call) for call in clean["tool_calls"]]
     return clean
