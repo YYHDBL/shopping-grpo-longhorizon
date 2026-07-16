@@ -7,6 +7,16 @@ from shopping_grpo.shop_tools import tool_call_to_action
 
 
 RUNTIME_GUARD_FIELD = "runtime_action_guard"
+NAVIGATION_BUTTONS = {
+    "description",
+    "features",
+    "reviews",
+    "attributes",
+    "next >",
+    "< prev",
+    "back to search",
+    "buy now",
+}
 
 
 def action_reject_reason(name, arguments, observation):
@@ -32,6 +42,8 @@ def action_reject_reason(name, arguments, observation):
     if not isinstance(action, str) or not action.startswith("click[") or not action.endswith("]"):
         return "click_not_in_previous_observation"
     target = action[6:-1].casefold()
+    if name == "select_option" and target in NAVIGATION_BUTTONS:
+        return "select_option_is_navigation_button"
     if target not in {button.casefold() for button in clickable_buttons(observation)}:
         return "click_not_in_previous_observation"
     return None

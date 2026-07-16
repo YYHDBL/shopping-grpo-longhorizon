@@ -1,7 +1,9 @@
 import json
 import tempfile
 import unittest
+from http.client import RemoteDisconnected
 from pathlib import Path
+from unittest.mock import patch
 
 from shopping_grpo.action_validation import action_guard_tool_message
 from shopping_grpo.shop_http_env import ShopEnvironmentError
@@ -153,6 +155,8 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertIn("开始选择规格后", SYSTEM_PROMPT)
         self.assertIn("同一规格组只能选择一个值", SYSTEM_PROMPT)
         self.assertIn("只有按钮实际出现才可调用", SYSTEM_PROMPT)
+        self.assertIn("用户硬约束", SYSTEM_PROMPT)
+        self.assertIn("任一硬约束未在当前页面证实，不得购买", SYSTEM_PROMPT)
 
     def test_guard_gives_a_return_only_instruction_on_information_subpage(self):
         """子页误操作后，守卫应明确引导模型先返回，不重复猜测按钮。"""
@@ -511,6 +515,30 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertNotIn("temperature", captured["payload"])
         self.assertNotIn("top_p", captured["payload"])
         self.assertEqual(message["reasoning_content"], "先核对规格，再搜索。")
+
+    def test_openai_client_retries_transient_disconnect_without_replaying_tools(self):
+        attempts = []
+
+        def transport(url, payload, headers, timeout):
+            attempts.append(payload)
+            if len(attempts) == 1:
+                raise RemoteDisconnected("connection closed")
+            return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+        client = OpenAIChatClient(
+            model="deepseek-v4-pro",
+            base_url="https://api.example.test/v1",
+            api_key="secret",
+            transport=transport,
+        )
+
+        with patch("shopping_grpo.teacher_rollout.time.sleep") as sleep:
+            message = client.complete([{"role": "user", "content": "继续"}], tools=[])
+
+        self.assertEqual(message["content"], "ok")
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(attempts[0], attempts[1])
+        sleep.assert_called_once()
 
 
 if __name__ == "__main__":
