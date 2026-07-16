@@ -132,6 +132,12 @@ def _terminal_tool_call_id(trajectory):
 
 def _sanitize_message(message, terminal_tool_call_id=None):
     clean = {key: message[key] for key in ALLOWED_MESSAGE_KEYS if key in message}
+    reasoning = message.get("reasoning_content")
+    if clean.get("role") == "assistant" and isinstance(reasoning, str) and reasoning.strip():
+        # 用标准 content 保存教师推理，避免 chat template 忽略 provider 专有字段。
+        thought = f"<think>{reasoning.strip()}</think>"
+        content = clean.get("content")
+        clean["content"] = thought if not content else f"{thought}\n{content}"
     if clean.get("role") == "tool" and clean.get("tool_call_id") == terminal_tool_call_id:
         clean["content"] = "购买已完成。"
     if "tool_calls" in clean:
