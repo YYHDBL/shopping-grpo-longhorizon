@@ -34,6 +34,8 @@ class OpenAIChatClient:
         temperature=0.0,
         top_p=1.0,
         timeout=60,
+        thinking=False,
+        reasoning_effort="high",
         transport=None,
     ):
         self.model = model
@@ -42,6 +44,8 @@ class OpenAIChatClient:
         self.temperature = float(temperature)
         self.top_p = float(top_p)
         self.timeout = timeout
+        self.thinking = bool(thinking)
+        self.reasoning_effort = reasoning_effort
         self.transport = transport
 
     def complete(self, messages, tools):
@@ -50,9 +54,17 @@ class OpenAIChatClient:
             "messages": messages,
             "tools": tools,
             "tool_choice": "auto",
-            "temperature": self.temperature,
-            "top_p": self.top_p,
         }
+        if self.thinking:
+            # DeepSeek tool-call thinking requires reasoning_content in later messages.
+            payload.update(
+                {
+                    "thinking": {"type": "enabled"},
+                    "reasoning_effort": self.reasoning_effort,
+                }
+            )
+        else:
+            payload.update({"temperature": self.temperature, "top_p": self.top_p})
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
@@ -325,7 +337,16 @@ def _plain(value):
     return value
 
 
-def client_from_env(model=None, base_url=None, api_key=None, temperature=0.0, top_p=1.0, timeout=60):
+def client_from_env(
+    model=None,
+    base_url=None,
+    api_key=None,
+    temperature=0.0,
+    top_p=1.0,
+    timeout=60,
+    thinking=False,
+    reasoning_effort="high",
+):
     api_key = api_key or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("api_key or OPENAI_API_KEY is required")
@@ -336,4 +357,6 @@ def client_from_env(model=None, base_url=None, api_key=None, temperature=0.0, to
         temperature=temperature,
         top_p=top_p,
         timeout=timeout,
+        thinking=thinking,
+        reasoning_effort=reasoning_effort,
     )

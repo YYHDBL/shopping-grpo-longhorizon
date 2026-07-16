@@ -65,6 +65,15 @@ PYTHONPATH=src python3 scripts/smoke_shop_env.py \
 
 1、10、100 个任务分别只需更换 `--limit`。以下命令的 `--limit` 限制任务数，不保证同样数量的 accepted 轨迹。
 
+使用 DeepSeek V4 Flash 思考模式时，显式指定模型和开关。rollout 会在 raw 中保留并回传 `reasoning_content` 以支持 tool calling；构造 SFT JSONL 时会自动移除该字段。
+
+```bash
+PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
+  --tasks data/shop_tasks.jsonl --output outputs/thinking/raw.jsonl \
+  --base-url "$SHOPSIM_BASE_URL" --model deepseek-v4-flash \
+  --thinking --reasoning-effort high --limit 10 --max-steps 30
+```
+
 ```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/one/raw.jsonl \

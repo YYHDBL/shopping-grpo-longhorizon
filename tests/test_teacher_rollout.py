@@ -268,6 +268,47 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertEqual(captured["payload"]["temperature"], 0.2)
         self.assertEqual(captured["headers"]["Authorization"], "Bearer secret")
 
+    def test_openai_client_thinking_mode_keeps_reasoning_for_tool_follow_up(self):
+        captured = {}
+
+        def transport(url, payload, headers, timeout):
+            captured.update({"payload": payload})
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "reasoning_content": "先核对规格，再搜索。",
+                            "tool_calls": [
+                                {
+                                    "id": "call_search",
+                                    "type": "function",
+                                    "function": {"name": "search_products", "arguments": '{"query":"乳胶枕"}'},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+
+        client = OpenAIChatClient(
+            model="deepseek-v4-flash",
+            base_url="https://api.example.test/v1",
+            api_key="secret",
+            thinking=True,
+            reasoning_effort="high",
+            transport=transport,
+        )
+
+        message = client.complete([{"role": "user", "content": "买乳胶枕"}], tools=[{"type": "function"}])
+
+        self.assertEqual(captured["payload"]["thinking"], {"type": "enabled"})
+        self.assertEqual(captured["payload"]["reasoning_effort"], "high")
+        self.assertNotIn("temperature", captured["payload"])
+        self.assertNotIn("top_p", captured["payload"])
+        self.assertEqual(message["reasoning_content"], "先核对规格，再搜索。")
+
 
 if __name__ == "__main__":
     unittest.main()

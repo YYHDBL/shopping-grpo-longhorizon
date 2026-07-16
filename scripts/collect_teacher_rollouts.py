@@ -18,6 +18,8 @@ def parse_args():
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--max-steps", type=int, default=30)
+    parser.add_argument("--thinking", action="store_true", help="开启 DeepSeek thinking mode")
+    parser.add_argument("--reasoning-effort", choices=("high", "max"), default="high")
     parser.add_argument("--attempts-per-task", type=int, default=1)
     parser.add_argument("--limit", type=int, default=None)
     return parser.parse_args()
@@ -41,6 +43,8 @@ def main():
         temperature=args.temperature,
         top_p=args.top_p,
         timeout=args.timeout,
+        thinking=args.thinking,
+        reasoning_effort=args.reasoning_effort,
     )
     written = collect_tasks(
         tasks,

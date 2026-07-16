@@ -15,6 +15,24 @@ class CollectTeacherRolloutsCliTest(unittest.TestCase):
 
         self.assertEqual(args.max_steps, 30)
 
+    def test_thinking_flag_enables_explicit_deepseek_thinking_mode(self):
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "collect_teacher_rollouts.py",
+                "--tasks",
+                "tasks.jsonl",
+                "--thinking",
+                "--reasoning-effort",
+                "high",
+            ],
+        ):
+            args = parse_args()
+
+        self.assertTrue(args.thinking)
+        self.assertEqual(args.reasoning_effort, "high")
+
 
 if __name__ == "__main__":
     unittest.main()
