@@ -47,6 +47,17 @@ def action_guard_tool_message(tool_call, reason, observation):
     if targets:
         parts.append("可点击按钮: " + ", ".join(targets[:30]))
     allowed = "；".join(parts) or "当前页面没有可用点击目标"
+    return_tools = []
+    normalized_targets = {target.casefold() for target in targets}
+    if "< prev" in normalized_targets:
+        return_tools.append("prev_page")
+    if "back to search" in normalized_targets:
+        return_tools.append("back_to_search")
+    only_return_buttons = bool(normalized_targets) and normalized_targets <= {"< prev", "back to search"}
+    if only_return_buttons:
+        correction = f"你处于信息子页，下一步只能调用 {' 或 '.join(return_tools)}。"
+    else:
+        correction = "下一步只能从当前页面列出的目标中选择。"
     return {
         "role": "tool",
         "tool_call_id": tool_call.get("id"),
@@ -54,7 +65,7 @@ def action_guard_tool_message(tool_call, reason, observation):
         RUNTIME_GUARD_FIELD: True,
         "content": (
             f"上一工具调用被本地动作守卫拒绝（{reason}），未执行。"
-            f"仅可依据当前页面重试。{allowed}。只调用一个合法工具。"
+            f"{correction}{allowed}。不要重复使用历史页面目标；只调用一个合法工具。"
         ),
     }
 

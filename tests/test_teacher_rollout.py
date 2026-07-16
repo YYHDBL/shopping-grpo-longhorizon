@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from shopping_grpo.action_validation import action_guard_tool_message
 from shopping_grpo.shop_http_env import ShopEnvironmentError
 from shopping_grpo.teacher_rollout import (
     CollectionInfrastructureError,
@@ -109,6 +110,20 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertIn("返回商品详情页", SYSTEM_PROMPT)
         self.assertIn("不要在购买前输出最终答复", SYSTEM_PROMPT)
         self.assertIn("开始选择规格后", SYSTEM_PROMPT)
+        self.assertIn("同一规格组只能选择一个值", SYSTEM_PROMPT)
+        self.assertIn("只有按钮实际出现才可调用", SYSTEM_PROMPT)
+
+    def test_guard_gives_a_return_only_instruction_on_information_subpage(self):
+        """子页误操作后，守卫应明确引导模型先返回，不重复猜测按钮。"""
+        message = action_guard_tool_message(
+            assistant_tool("view_attributes", {}, "call_attributes"),
+            "click_not_in_previous_observation",
+            '详情页内容\n\n可点击的按钮: ["< Prev"]',
+        )
+
+        self.assertIn("你处于信息子页", message["content"])
+        self.assertIn("prev_page", message["content"])
+        self.assertIn("不要重复使用历史页面目标", message["content"])
 
     def test_collect_for_task_executes_openai_tool_calls_until_done(self):
         client = MockClient(
