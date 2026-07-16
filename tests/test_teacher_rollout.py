@@ -74,6 +74,47 @@ class UnavailableEnv(FakeEnv):
         raise ShopEnvironmentError("Unable to get available environment resource, please try again later")
 
 
+class GuardRecoveryEnv(FakeEnv):
+    """用于验证非法尝试被合法工具调用隔开时仍可恢复。"""
+
+    def step(self, action):
+        self.actions.append(action)
+        if action == "search[乳胶枕]":
+            return {
+                "instruction": "results [SEP] 100000000001 [SEP] 乳胶枕",
+                "reward": 0.0,
+                "done": False,
+            }
+        if action == "click[100000000001]":
+            return {
+                "instruction": 'detail\n\n可点击的按钮: ["Features", "Buy Now"]',
+                "reward": 0.0,
+                "done": False,
+            }
+        if action == "click[Features]":
+            return {
+                "instruction": 'features\n\n可点击的按钮: ["< Prev"]',
+                "reward": 0.0,
+                "done": False,
+            }
+        if action == "click[< Prev]":
+            return {
+                "instruction": 'detail\n\n可点击的按钮: ["Features", "Buy Now"]',
+                "reward": 0.0,
+                "done": False,
+            }
+        if action == "click[Buy Now]":
+            return {
+                "instruction": "done page",
+                "reward": 1.0,
+                "done": True,
+                "over": True,
+                "purchase": {"asin": "A1"},
+                "reward_detail": {"r_type": 1, "r_att": 1, "r_option": 1, "r_price": 1},
+            }
+        raise AssertionError(f"unexpected action: {action}")
+
+
 class MockClient:
     def __init__(self, messages):
         self.messages = list(messages)
@@ -187,6 +228,40 @@ class TeacherRolloutTest(unittest.TestCase):
                 for message in traj["messages"]
             )
         )
+
+    def test_collect_for_task_allows_recovery_after_separated_guard_rejections(self):
+        """合法动作应重置守卫计数，避免累计三次历史点击提前中止。"""
+        client = MockClient(
+            [
+                assistant_tool("search_products", {"query": "乳胶枕"}, "call_search"),
+                assistant_tool("open_product", {"asin": "999999999999"}, "call_old_asin"),
+                assistant_tool("open_product", {"asin": "100000000001"}, "call_open"),
+                assistant_tool("view_attributes", {}, "call_missing_attributes"),
+                assistant_tool("view_features", {}, "call_features"),
+                assistant_tool("buy_now", {}, "call_buy_on_subpage"),
+                assistant_tool("prev_page", {}, "call_return"),
+                assistant_tool("buy_now", {}, "call_buy"),
+            ]
+        )
+        env = GuardRecoveryEnv()
+
+        traj = collect_for_task(
+            {"task_id": 11},
+            client=client,
+            env_factory=lambda **kwargs: env,
+            base_url="http://shop.test",
+            max_steps=8,
+        )
+
+        self.assertEqual(traj["status"], "done")
+        self.assertEqual(len(traj["blocked_tool_calls"]), 3)
+        self.assertEqual(env.actions, [
+            "search[乳胶枕]",
+            "click[100000000001]",
+            "click[Features]",
+            "click[< Prev]",
+            "click[Buy Now]",
+        ])
 
     def test_collect_for_task_keeps_exception_trajectory_and_releases_env(self):
         client = MockClient([assistant_tool("search_products", {"query": "乳胶枕"})])

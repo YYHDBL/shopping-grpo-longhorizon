@@ -175,6 +175,7 @@ def collect_for_task(
         messages = _initial_messages(task, initial)
         trajectory["messages"] = messages
         tool_schemas = tools or SHOP_TOOL_SCHEMAS
+        consecutive_blocked_calls = 0
 
         while len(trajectory["steps"]) < int(max_steps):
             assistant = client.complete(messages, tool_schemas)
@@ -199,16 +200,18 @@ def collect_for_task(
             except Exception as exc:
                 reason = f"invalid_tool_call:{exc.__class__.__name__}"
             if reason:
+                consecutive_blocked_calls += 1
                 trajectory["blocked_tool_calls"].append(
                     {
                         "step_index": len(trajectory["steps"]),
                         "tool_call": tool_call,
                         "reason": reason,
+                        "consecutive_count": consecutive_blocked_calls,
                     }
                 )
                 messages.append(assistant)
                 messages.append(action_guard_tool_message(tool_call, reason, latest_observation))
-                if len(trajectory["blocked_tool_calls"]) >= MAX_BLOCKED_TOOL_CALLS:
+                if consecutive_blocked_calls >= MAX_BLOCKED_TOOL_CALLS:
                     trajectory["status"] = "invalid_action_limit"
                     break
                 continue
@@ -218,6 +221,7 @@ def collect_for_task(
             messages.append(assistant)
             step = _execute_tool_call(env, tool_call, len(trajectory["steps"]))
             trajectory["steps"].append(step)
+            consecutive_blocked_calls = 0
             latest_observation = step["observation"]
             messages.append(_tool_message(tool_call, step))
             if step["done"]:
