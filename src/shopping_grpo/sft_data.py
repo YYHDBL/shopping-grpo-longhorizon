@@ -36,6 +36,10 @@ def acceptance_reasons(trajectory):
             if reward_detail.get(key) != 1 and reward_detail.get(key) is not True:
                 reasons.append(f"reward_detail.{key}_not_1")
 
+    for index, message in enumerate(trajectory.get("messages") or []):
+        if message.get("role") == "assistant" and len(message.get("tool_calls") or []) > 1:
+            reasons.append(f"message_{index}.multiple_tool_calls")
+
     for index, step in enumerate(steps):
         reason = _tool_step_reject_reason(step)
         if reason:

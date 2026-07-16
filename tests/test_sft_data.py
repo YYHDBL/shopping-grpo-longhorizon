@@ -109,6 +109,21 @@ class SftDataTest(unittest.TestCase):
         self.assertFalse(accepted)
         self.assertIn("missing_buy", reasons)
 
+    def test_acceptance_reasons_rejects_parallel_tool_calls(self):
+        traj = accepted_trajectory()
+        traj["messages"][2]["tool_calls"].append(
+            {
+                "id": "call_extra",
+                "type": "function",
+                "function": {"name": "open_product", "arguments": '{"asin":"A2"}'},
+            }
+        )
+
+        accepted, reasons = acceptance_reasons(traj)
+
+        self.assertFalse(accepted)
+        self.assertIn("message_2.multiple_tool_calls", reasons)
+
     def test_build_sft_row_keeps_only_training_messages_and_tools(self):
         traj = accepted_trajectory()
         traj["messages"][2]["reasoning_content"] = "这是 Teacher 的内部推理，只用于 rollout 连贯性。"
