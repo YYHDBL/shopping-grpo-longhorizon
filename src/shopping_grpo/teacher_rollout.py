@@ -1,22 +1,44 @@
-"""Teacher rollout collection with OpenAI-compatible tool calls."""
+"""使用 OpenAI 兼容工具调用采集购物 Teacher 轨迹。"""
 
 import json
 import os
+import time
 import traceback
 from datetime import datetime, timezone
+from http.client import RemoteDisconnected
+from urllib.error import URLError
 from pathlib import Path
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from shopping_grpo.shop_http_env import ShopAgentEnv
+from shopping_grpo.action_validation import action_guard_tool_message, action_reject_reason
+from shopping_grpo.shop_http_env import ShopAgentEnv, ShopEnvironmentError, ShopHttpError
 from shopping_grpo.shop_tools import SHOP_TOOL_SCHEMAS, tool_call_to_action
 
 
-SYSTEM_PROMPT = (
-    "You are a shopping agent. Use the provided tools to search, open products, "
-    "select options, and buy only when confident. Return tool calls only while "
-    "you need to interact with the shop."
-)
+SYSTEM_PROMPT = """你是一个购物 Agent，负责在 ShopSimulator 中替用户完成购买。
+
+这是单轮购物任务：用户的完整需求只会在开头给出。不得向用户追问、确认、告别，也不要假设存在用户对话工具。你只能调用提供的标准工具与商店交互。
+
+执行规则：
+1. 每次工具返回后，先阅读最新 observation。`open_product`、`select_option` 和其他点击的值必须来自当前页面显示的可点击按钮；不要使用历史页面中的商品编号或规格。调用 `buy_now` 前，必须检查 `Buy Now 是否出现在最新 observation`；未出现时不得购买。
+2. 搜索词应包含品类和用户已给出的关键属性、规格、品牌或预算线索。搜索后打开候选商品，按需查看 Description、Features、Attributes 或 Reviews 来核验。只有按钮实际出现才可调用这些子页工具；信息子页通常不能选规格或购买，若当前只显示返回按钮，立即按当前按钮返回商品详情页。
+3. 先在商品详情页完成必要的核验；然后用 `select_option` 选择规格，再调用 `buy_now` 完成购买。同一规格组只能选择一个值：选择后先读取最新页面，绝不依次试选同一组多个值；若价格或选项不符合需求，返回或换商品，不得直接购买。开始选择规格后，不得再搜索、打开其他商品、查看子页、翻页或返回搜索；此后只可继续选择尚未选择的规格，或在 Buy Now 可见时立即 `buy_now`。若规格选项或 Buy Now 不在最新页面，先返回商品详情页。`buy_now` 是终止动作，不是跳转到结算页。
+4. 用户明确提出的型号、产地、材质、颜色/规格、功能和预算都是用户硬约束。购买前逐项在当前商品标题、详情、规格或价格中核验；任一硬约束未在当前页面证实，不得购买，返回搜索或继续查看，不要用相似商品猜测补齐。
+5. 轨迹有严格步数上限。不要重复无效搜索、不要调用 `think`；优先快速核验硬约束，但不要因步数不足而违背硬约束购买。
+6. 不要在购买前输出最终答复、推荐总结或停止调用工具。每个未结束的 assistant 回合只输出一个工具调用；只有环境报告任务结束后才停止。
+7. 若某次 tool 返回“本地动作守卫拒绝，未执行”，立即按其中当前页面允许的目标重新调用，不要重复被拒绝动作。
+"""
+
+
+MAX_BLOCKED_TOOL_CALLS = 3
+MODEL_COMPLETION_RETRIES = 2
+MODEL_RETRY_DELAY_SECONDS = 1
+
+
+def rollout_interrupted(signum, frame):
+    """将终止信号转为 KeyboardInterrupt，使 collect_for_task 的 finally 释放环境。"""
+    raise KeyboardInterrupt
 
 
 class OpenAIChatClient:
@@ -28,6 +50,8 @@ class OpenAIChatClient:
         temperature=0.0,
         top_p=1.0,
         timeout=60,
+        thinking=False,
+        reasoning_effort="high",
         transport=None,
     ):
         self.model = model
@@ -36,6 +60,8 @@ class OpenAIChatClient:
         self.temperature = float(temperature)
         self.top_p = float(top_p)
         self.timeout = timeout
+        self.thinking = bool(thinking)
+        self.reasoning_effort = reasoning_effort
         self.transport = transport
 
     def complete(self, messages, tools):
@@ -44,26 +70,42 @@ class OpenAIChatClient:
             "messages": messages,
             "tools": tools,
             "tool_choice": "auto",
-            "temperature": self.temperature,
-            "top_p": self.top_p,
         }
+        if self.thinking:
+            # DeepSeek tool-call thinking requires reasoning_content in later messages.
+            payload.update(
+                {
+                    "thinking": {"type": "enabled"},
+                    "reasoning_effort": self.reasoning_effort,
+                }
+            )
+        else:
+            payload.update({"temperature": self.temperature, "top_p": self.top_p})
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
+            # 避免 Cloudflare 将 Python urllib 默认客户端识别为自动化流量。
+            "User-Agent": "shopping-grpo-longhorizon/0.1",
         }
         url = f"{self.base_url}/chat/completions"
-        if self.transport is not None:
-            response = self.transport(url, payload, headers, self.timeout)
-        else:
-            request = Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
-            with urlopen(request, timeout=self.timeout) as raw:
-                response = json.loads(raw.read().decode("utf-8"))
-        return _response_message(response)
+        for attempt in range(MODEL_COMPLETION_RETRIES + 1):
+            try:
+                if self.transport is not None:
+                    response = self.transport(url, payload, headers, self.timeout)
+                else:
+                    request = Request(
+                        url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers=headers,
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=self.timeout) as raw:
+                        response = json.loads(raw.read().decode("utf-8"))
+                return _response_message(response)
+            except (RemoteDisconnected, TimeoutError, URLError):
+                if attempt >= MODEL_COMPLETION_RETRIES:
+                    raise
+                time.sleep(MODEL_RETRY_DELAY_SECONDS * (attempt + 1))
 
 
 class ToolExecutionError(RuntimeError):
@@ -71,6 +113,10 @@ class ToolExecutionError(RuntimeError):
         super().__init__(str(original))
         self.step = step
         self.original = original
+
+
+class CollectionInfrastructureError(RuntimeError):
+    """环境租约未恢复时，阻止采集器继续污染后续任务。"""
 
 
 def load_tasks(path):
@@ -112,7 +158,7 @@ def collect_for_task(
     client,
     env_factory=ShopAgentEnv,
     base_url="http://127.0.0.1:5000",
-    max_steps=8,
+    max_steps=30,
     tools=None,
     attempt_index=0,
 ):
@@ -124,40 +170,85 @@ def collect_for_task(
         "status": "running",
         "messages": [],
         "steps": [],
+        "blocked_tool_calls": [],
+        "tool_call_truncations": [],
         "initial_result": {},
         "terminal_result": {},
         "final_reward": 0.0,
         "done": False,
         "error": None,
+        "release_error": None,
     }
     env = env_factory(base_url=base_url)
     try:
         initial = env.reset(task["task_id"])
+        latest_observation = initial.get("instruction", initial.get("observation", ""))
         trajectory["initial_result"] = initial
         messages = _initial_messages(task, initial)
         trajectory["messages"] = messages
         tool_schemas = tools or SHOP_TOOL_SCHEMAS
+        consecutive_blocked_calls = 0
+        selection_started = False
 
         while len(trajectory["steps"]) < int(max_steps):
             assistant = client.complete(messages, tool_schemas)
-            messages.append(assistant)
+            assistant, dropped_tool_calls = _enforce_serial_tool_call(assistant)
+            if dropped_tool_calls:
+                trajectory["tool_call_truncations"].append(
+                    {
+                        "message_index": len(messages),
+                        "kept_tool_call_id": assistant["tool_calls"][0].get("id"),
+                        "dropped_tool_calls": dropped_tool_calls,
+                    }
+                )
             tool_calls = assistant.get("tool_calls") or []
             if not tool_calls:
+                messages.append(assistant)
                 trajectory["status"] = "assistant_final"
                 break
-            for tool_call in tool_calls:
-                if len(trajectory["steps"]) >= int(max_steps):
-                    trajectory["status"] = "max_steps"
-                    return trajectory
-                step = _execute_tool_call(env, tool_call, len(trajectory["steps"]))
-                trajectory["steps"].append(step)
-                messages.append(_tool_message(tool_call, step))
-                if step["done"]:
-                    trajectory["status"] = "done"
-                    trajectory["terminal_result"] = step["result"]
-                    trajectory["final_reward"] = step["reward"]
-                    trajectory["done"] = True
-                    return trajectory
+            tool_call = tool_calls[0]
+            try:
+                name, arguments = _tool_call_name_args(tool_call)
+                reason = action_reject_reason(
+                    name,
+                    arguments,
+                    latest_observation,
+                    selection_started=selection_started,
+                )
+            except Exception as exc:
+                reason = f"invalid_tool_call:{exc.__class__.__name__}"
+            if reason:
+                consecutive_blocked_calls += 1
+                trajectory["blocked_tool_calls"].append(
+                    {
+                        "step_index": len(trajectory["steps"]),
+                        "tool_call": tool_call,
+                        "reason": reason,
+                        "consecutive_count": consecutive_blocked_calls,
+                    }
+                )
+                messages.append(assistant)
+                messages.append(action_guard_tool_message(tool_call, reason, latest_observation))
+                if consecutive_blocked_calls >= MAX_BLOCKED_TOOL_CALLS:
+                    trajectory["status"] = "invalid_action_limit"
+                    break
+                continue
+            if len(trajectory["steps"]) >= int(max_steps):
+                trajectory["status"] = "max_steps"
+                return trajectory
+            messages.append(assistant)
+            step = _execute_tool_call(env, tool_call, len(trajectory["steps"]))
+            trajectory["steps"].append(step)
+            consecutive_blocked_calls = 0
+            selection_started = selection_started or name == "select_option"
+            latest_observation = step["observation"]
+            messages.append(_tool_message(tool_call, step))
+            if step["done"]:
+                trajectory["status"] = "done"
+                trajectory["terminal_result"] = step["result"]
+                trajectory["final_reward"] = step["reward"]
+                trajectory["done"] = True
+                return trajectory
         else:
             trajectory["status"] = "max_steps"
         if trajectory["steps"]:
@@ -180,13 +271,13 @@ def collect_for_task(
     finally:
         try:
             env.release()
-        except Exception:
-            if trajectory["error"] is None:
-                trajectory["error"] = {
-                    "type": "ReleaseError",
-                    "message": traceback.format_exc(),
-                }
-                trajectory["status"] = "error"
+        except Exception as exc:
+            trajectory["release_error"] = {
+                "type": exc.__class__.__name__,
+                "message": str(exc),
+                "traceback": traceback.format_exc(),
+            }
+            trajectory["status"] = "environment_release_failed"
     return trajectory
 
 
@@ -203,7 +294,7 @@ def collect_tasks(
     client,
     output_path,
     base_url,
-    max_steps=8,
+    max_steps=30,
     env_factory=ShopAgentEnv,
     attempts_per_task=1,
 ):
@@ -227,7 +318,25 @@ def collect_tasks(
             )
             append_jsonl(output_path, [trajectory])
             written.append(trajectory)
+            if _is_infrastructure_failure(trajectory):
+                raise CollectionInfrastructureError(
+                    "ShopSimulator infrastructure failure; collection stopped before the next task"
+                )
     return written
+
+
+def _is_infrastructure_failure(trajectory):
+    """只在环境不可用或租约未释放时中断；普通任务失败仍保留并继续。"""
+    if trajectory.get("release_error"):
+        return True
+    error = trajectory.get("error") or {}
+    error_type = error.get("type")
+    if error_type == ShopHttpError.__name__:
+        return True
+    return (
+        error_type == ShopEnvironmentError.__name__
+        and "Unable to get available environment resource" in error.get("message", "")
+    )
 
 
 def _execute_tool_call(env, tool_call, step_index):
@@ -269,6 +378,16 @@ def _tool_message(tool_call, step):
         "name": step["tool_name"],
         "content": step["observation"],
     }
+
+
+def _enforce_serial_tool_call(assistant):
+    """每轮只把一个工具调用交给环境，防止在旧 observation 上批量点击。"""
+    tool_calls = assistant.get("tool_calls") or []
+    if len(tool_calls) <= 1:
+        return assistant, []
+    serial_assistant = dict(assistant)
+    serial_assistant["tool_calls"] = [tool_calls[0]]
+    return serial_assistant, list(tool_calls[1:])
 
 
 def _initial_messages(task, initial):
@@ -319,7 +438,16 @@ def _plain(value):
     return value
 
 
-def client_from_env(model=None, base_url=None, api_key=None, temperature=0.0, top_p=1.0, timeout=60):
+def client_from_env(
+    model=None,
+    base_url=None,
+    api_key=None,
+    temperature=0.0,
+    top_p=1.0,
+    timeout=60,
+    thinking=False,
+    reasoning_effort="high",
+):
     api_key = api_key or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("api_key or OPENAI_API_KEY is required")
@@ -330,4 +458,6 @@ def client_from_env(model=None, base_url=None, api_key=None, temperature=0.0, to
         temperature=temperature,
         top_p=top_p,
         timeout=timeout,
+        thinking=thinking,
+        reasoning_effort=reasoning_effort,
     )
