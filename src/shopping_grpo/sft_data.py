@@ -62,13 +62,30 @@ def build_sft_row(trajectory):
     return {
         "trajectory_id": trajectory.get("trajectory_id"),
         "task_id": trajectory.get("task_id"),
-        "messages": [
-            _sanitize_message(message, terminal_tool_call_id)
-            for message in trajectory.get("messages", [])
-            if not _is_blocked_training_message(message, blocked_call_ids)
-        ],
+        "messages": _training_messages(
+            trajectory.get("messages", []), blocked_call_ids, terminal_tool_call_id
+        ),
         "tools": SHOP_TOOL_SCHEMAS,
     }
+
+
+def _training_messages(messages, blocked_call_ids, terminal_tool_call_id):
+    """移除守卫对话；守卫后的下一轮推理也不能作为训练目标。"""
+    clean_messages = []
+    follows_runtime_guard = False
+    for message in messages:
+        if _is_blocked_training_message(message, blocked_call_ids):
+            follows_runtime_guard = message.get(RUNTIME_GUARD_FIELD) is True
+            continue
+        clean_messages.append(
+            _sanitize_message(
+                message,
+                terminal_tool_call_id,
+                retain_reasoning=not follows_runtime_guard,
+            )
+        )
+        follows_runtime_guard = False
+    return clean_messages
 
 
 def _is_blocked_training_message(message, blocked_call_ids):
@@ -177,10 +194,15 @@ def _terminal_tool_call_id(trajectory):
     return (terminal_steps[-1].get("tool_call") or {}).get("id")
 
 
-def _sanitize_message(message, terminal_tool_call_id=None):
+def _sanitize_message(message, terminal_tool_call_id=None, retain_reasoning=True):
     clean = {key: message[key] for key in ALLOWED_MESSAGE_KEYS if key in message}
     reasoning = message.get("reasoning_content")
-    if clean.get("role") == "assistant" and isinstance(reasoning, str) and reasoning.strip():
+    if (
+        retain_reasoning
+        and clean.get("role") == "assistant"
+        and isinstance(reasoning, str)
+        and reasoning.strip()
+    ):
         # 用标准 content 保存教师推理，避免 chat template 忽略 provider 专有字段。
         thought = f"<think>{reasoning.strip()}</think>"
         content = clean.get("content")
