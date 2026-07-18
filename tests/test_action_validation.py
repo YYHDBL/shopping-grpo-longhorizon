@@ -25,6 +25,14 @@ class ActionValidationTest(unittest.TestCase):
 
         self.assertIsNone(reason)
 
+    def test_rejects_schema_extra_argument_before_executing_tool(self):
+        """无参数工具携带垃圾字段时，不能静默丢弃字段后继续执行。"""
+        observation = '商品页\n\n可点击的按钮: ["Buy Now"]'
+
+        reason = action_reject_reason("buy_now", {"string": "true"}, observation)
+
+        self.assertEqual(reason, "schema_extra_arguments:string")
+
 
 if __name__ == "__main__":
     unittest.main()

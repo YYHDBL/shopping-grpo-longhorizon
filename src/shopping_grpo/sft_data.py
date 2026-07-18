@@ -41,10 +41,16 @@ def acceptance_reasons(trajectory):
         if message.get("role") == "assistant" and len(message.get("tool_calls") or []) > 1:
             reasons.append(f"message_{index}.multiple_tool_calls")
 
+    option_selected = False
     for index, step in enumerate(steps):
         reason = _tool_step_reject_reason(trajectory, step)
         if reason:
             reasons.append(f"step_{index}.{reason}")
+        tool_name = step.get("tool_name")
+        if option_selected and tool_name not in {"select_option", "buy_now", "think"}:
+            reasons.append(f"step_{index}.action_after_option_selection")
+        if tool_name == "select_option":
+            option_selected = True
 
     return len(reasons) == 0, reasons
 
