@@ -71,21 +71,21 @@ PYTHONPATH=src python3 scripts/smoke_shop_env.py \
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/thinking/raw.jsonl \
   --base-url "$SHOPSIM_BASE_URL" --model deepseek-v4-flash \
-  --thinking --reasoning-effort high --limit 10 --max-steps 30
+  --thinking --reasoning-effort high --limit 10 --max-steps 50
 ```
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/one/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 30
+  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 50
 
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/ten/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 30
+  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 50
 
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/hundred/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 30
+  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 50
 ```
 
 将任一 raw JSONL 构造成 accepted、rejected、统计和标准 OpenAI messages JSONL：

@@ -25,7 +25,7 @@ PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl \
   --output outputs/accepted_6000/raw.jsonl \
   --base-url "$SHOPSIM_BASE_URL" \
-  --attempts-per-task 4 --temperature 0.8 --top-p 1.0 --max-steps 30
+  --attempts-per-task 4 --temperature 0.8 --top-p 1.0 --max-steps 50
 
 PYTHONPATH=src python3 scripts/build_sft_data.py \
   --raw outputs/accepted_6000/raw.jsonl \
