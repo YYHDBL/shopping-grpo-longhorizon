@@ -157,6 +157,7 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertIn("只有按钮实际出现才可调用", SYSTEM_PROMPT)
         self.assertIn("用户硬约束", SYSTEM_PROMPT)
         self.assertIn("任一硬约束未在当前页面证实，不得购买", SYSTEM_PROMPT)
+        self.assertIn("选择前检查点", SYSTEM_PROMPT)
 
     def test_guard_gives_a_return_only_instruction_on_information_subpage(self):
         """子页误操作后，守卫应明确引导模型先返回，不重复猜测按钮。"""
@@ -284,6 +285,55 @@ class TeacherRolloutTest(unittest.TestCase):
             "click[Buy Now]",
         ])
         self.assertEqual(traj["blocked_tool_calls"][0]["reason"], "action_not_allowed_after_option_selection")
+
+    def test_collect_for_task_only_exposes_option_and_purchase_tools_after_selection(self):
+        """选规格后不再把浏览工具暴露给模型，避免依赖事后 guard 纠错。"""
+        class OptionEnv(FakeEnv):
+            def step(self, action):
+                self.actions.append(action)
+                if action == "search[乳胶枕]":
+                    return {"instruction": "results [SEP] 100000000001", "reward": 0.0, "done": False}
+                if action == "click[100000000001]":
+                    return {
+                        "instruction": 'detail\n\n可点击的按钮: ["满天星", "Buy Now"]',
+                        "reward": 0.0,
+                        "done": False,
+                    }
+                if action == "click[满天星]":
+                    return {
+                        "instruction": 'selected\n\n可点击的按钮: ["Buy Now"]',
+                        "reward": 0.0,
+                        "done": False,
+                    }
+                if action == "click[Buy Now]":
+                    return {
+                        "instruction": "done",
+                        "reward": 1.0,
+                        "done": True,
+                        "over": True,
+                        "purchase": {"asin": "A1"},
+                        "reward_detail": {"r_type": 1, "r_att": 1, "r_option": 1, "r_price": 1},
+                    }
+                raise AssertionError(action)
+
+        client = MockClient(
+            [
+                assistant_tool("search_products", {"query": "乳胶枕"}, "call_search"),
+                assistant_tool("open_product", {"asin": "100000000001"}, "call_open"),
+                assistant_tool("select_option", {"value": "满天星"}, "call_option"),
+                assistant_tool("buy_now", {}, "call_buy"),
+            ]
+        )
+
+        trajectory = collect_for_task(
+            {"task_id": 13}, client=client, env_factory=OptionEnv, base_url="http://shop.test"
+        )
+
+        self.assertEqual(trajectory["status"], "done")
+        exposed_after_selection = [
+            schema["function"]["name"] for schema in client.requests[3]["tools"]
+        ]
+        self.assertEqual(exposed_after_selection, ["select_option", "buy_now"])
 
     def test_collect_for_task_allows_recovery_after_separated_guard_rejections(self):
         """合法动作应重置守卫计数，避免累计三次历史点击提前中止。"""
