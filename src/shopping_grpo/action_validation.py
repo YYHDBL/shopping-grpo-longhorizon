@@ -19,10 +19,8 @@ NAVIGATION_BUTTONS = {
 }
 
 
-def action_reject_reason(name, arguments, observation, selection_started=False):
+def action_reject_reason(name, arguments, observation):
     """返回动作拒绝原因；None 表示允许执行。"""
-    if selection_started and name not in {"select_option", "buy_now", "think"}:
-        return "action_not_allowed_after_option_selection"
     if name == "think":
         return None
     if name == "search_products":

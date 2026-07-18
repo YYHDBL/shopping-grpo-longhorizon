@@ -158,7 +158,7 @@ class SftDataTest(unittest.TestCase):
         self.assertFalse(accepted)
         self.assertIn("step_3.click_not_in_previous_observation", reasons)
 
-    def test_acceptance_reasons_rejects_navigation_after_option_selection(self):
+    def test_acceptance_reasons_allows_navigation_after_option_selection_when_current_page_allows_it(self):
         traj = accepted_trajectory()
         traj["messages"][7]["content"] = 'selected\n\n可点击的按钮: ["Description", "Buy Now"]'
         navigate = assistant_tool("view_description", {}, "call_navigation")
@@ -178,8 +178,8 @@ class SftDataTest(unittest.TestCase):
 
         accepted, reasons = acceptance_reasons(traj)
 
-        self.assertFalse(accepted)
-        self.assertIn("step_3.action_not_allowed_after_option_selection", reasons)
+        self.assertTrue(accepted)
+        self.assertEqual(reasons, [])
 
     def test_acceptance_reasons_ignores_runtime_guard_when_finding_previous_observation(self):
         traj = accepted_trajectory()

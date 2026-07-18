@@ -41,13 +41,10 @@ def acceptance_reasons(trajectory):
         if message.get("role") == "assistant" and len(message.get("tool_calls") or []) > 1:
             reasons.append(f"message_{index}.multiple_tool_calls")
 
-    selection_started = False
     for index, step in enumerate(steps):
-        reason = _tool_step_reject_reason(trajectory, step, selection_started=selection_started)
+        reason = _tool_step_reject_reason(trajectory, step)
         if reason:
             reasons.append(f"step_{index}.{reason}")
-        elif step.get("tool_name") == "select_option":
-            selection_started = True
 
     return len(reasons) == 0, reasons
 
@@ -133,7 +130,7 @@ def process_raw_trajectories(raw_path, accepted_path, rejected_path, stats_path,
     return summary
 
 
-def _tool_step_reject_reason(trajectory, step, selection_started=False):
+def _tool_step_reject_reason(trajectory, step):
     """校验工具参数与动作，并确保点击来自紧邻的环境 observation。"""
     tool_call = step.get("tool_call") or {}
     function = tool_call.get("function") or {}
@@ -159,7 +156,6 @@ def _tool_step_reject_reason(trajectory, step, selection_started=False):
         name,
         arguments,
         _previous_observation(trajectory, tool_call.get("id")),
-        selection_started=selection_started,
     )
 
 
