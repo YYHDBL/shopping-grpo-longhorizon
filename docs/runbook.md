@@ -18,6 +18,17 @@
 
 `--attempts-per-task N` 为每个任务定义 `0` 到 `N - 1` 的尝试编号。raw 输出中已有 `(task_id, attempt_index)` 的记录会在下一次运行时跳过；没有 `attempt_index` 的旧记录视为 attempt 0。
 
+日常采集使用 `scripts/collect_sft_batch.py`。它在一个目录中维护 raw、accepted、rejected、统计和 SFT 文件；中断后重跑同一命令即可续跑，并从完整 raw 重建派生产物。例如先采集 100 个任务：
+
+```bash
+PYTHONPATH=src python3 scripts/collect_sft_batch.py \
+  --tasks data/shop_tasks.jsonl \
+  --output-dir outputs/collection_100 \
+  --base-url "$SHOPSIM_BASE_URL" \
+  --model deepseek-v4-pro \
+  --thinking --reasoning-effort max
+```
+
 目标为 6000 条 accepted 时，任务数应显著多于 6000，并设定固定尝试次数。当前环境可导出 23,421 个 task_id；例如前 8,000 个任务、每个任务 4 次尝试，最多产生 32,000 条 raw trajectory。
 
 ```bash

@@ -99,6 +99,18 @@ PYTHONPATH=src python3 scripts/build_sft_data.py \
   --sft outputs/hundred/sft_openai_messages.jsonl
 ```
 
+推荐使用批次脚本采集并自动重建上述四类文件。相同 `--output-dir` 可直接断点续跑；
+默认采集前 100 个任务、每条最多 50 步。下面是当前 DeepSeek V4 Pro 思考模式的 100 条命令：
+
+```bash
+PYTHONPATH=src python3 scripts/collect_sft_batch.py \
+  --tasks data/shop_tasks.jsonl \
+  --output-dir outputs/collection_100 \
+  --base-url "$SHOPSIM_BASE_URL" \
+  --model deepseek-v4-pro \
+  --thinking --reasoning-effort max
+```
+
 完整的 6000 accepted 续跑和验收说明见 [docs/runbook.md](docs/runbook.md)。
 
 ## 验证
