@@ -1,6 +1,7 @@
 """验证一键采集并构造 SFT 数据的批次命令。"""
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -37,25 +38,63 @@ class CollectSftBatchCliTest(unittest.TestCase):
         self.assertEqual(args.limit, 900)
         self.assertEqual(args.target_accepted, 500)
 
+    def test_workers_is_parsed_for_parallel_collection(self):
+        with patch.object(sys, "argv", ["collect_sft_batch.py", "--workers", "4"]):
+            args = parse_args()
+
+        self.assertEqual(args.workers, 4)
+
     def test_collection_stops_after_target_number_of_accepted_trajectories(self):
-        with patch("scripts.collect_sft_batch.collect_tasks") as collect, patch(
+        with patch("scripts.collect_sft_batch.collect_for_task") as collect, patch(
             "scripts.collect_sft_batch.acceptance_reasons", return_value=(True, [])
         ), patch(
             "scripts.collect_sft_batch._progress_bar", return_value=MagicMock()
         ):
-            collect.side_effect = [[{"trajectory_id": "first"}], [{"trajectory_id": "second"}]]
-            written, accepted = _collect_until_target(
-                tasks=[{"task_id": 1}, {"task_id": 2}, {"task_id": 3}],
-                target_accepted=2,
-                client=object(),
-                output_path=Path("unused.jsonl"),
-                base_url="http://shop.test",
-                max_steps=50,
-                attempts_per_task=1,
-            )
+            collect.side_effect = [
+                {"trajectory_id": "first", "task_id": 1},
+                {"trajectory_id": "second", "task_id": 2},
+            ]
+            with tempfile.TemporaryDirectory() as tmpdir:
+                written, accepted = _collect_until_target(
+                    tasks=[{"task_id": 1}, {"task_id": 2}, {"task_id": 3}],
+                    target_accepted=2,
+                    client=object(),
+                    output_path=Path(tmpdir) / "raw.jsonl",
+                    base_url="http://shop.test",
+                    max_steps=50,
+                    attempts_per_task=1,
+                    workers=1,
+                )
 
         self.assertEqual([row["trajectory_id"] for row in written], ["first", "second"])
         self.assertEqual(accepted, 2)
+        self.assertEqual(collect.call_count, 2)
+
+    def test_parallel_collection_never_exceeds_accepted_target(self):
+        rows = [
+            {"trajectory_id": f"trajectory-{index}", "task_id": index}
+            for index in range(4)
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "scripts.collect_sft_batch.collect_for_task", side_effect=rows
+        ) as collect, patch(
+            "scripts.collect_sft_batch.acceptance_reasons", return_value=(True, [])
+        ), patch(
+            "scripts.collect_sft_batch._progress_bar", return_value=MagicMock()
+        ):
+            written, accepted = _collect_until_target(
+                tasks=[{"task_id": index} for index in range(4)],
+                target_accepted=2,
+                client=object(),
+                output_path=Path(tmpdir) / "raw.jsonl",
+                base_url="http://shop.test",
+                max_steps=50,
+                attempts_per_task=1,
+                workers=2,
+            )
+
+        self.assertEqual(accepted, 2)
+        self.assertEqual(len(written), 2)
         self.assertEqual(collect.call_count, 2)
 
 

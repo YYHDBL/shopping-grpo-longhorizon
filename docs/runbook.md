@@ -39,11 +39,14 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
 
 进度条的主进度表示已扫描任务数，右侧 `accepted=当前/目标` 表示已经通过确定性验收的轨迹数。按 `Ctrl+C` 可安全中断当前轨迹并释放环境；之后原样重跑即可续跑。
 
+采集器支持 `--workers N` 并发 rollout。先让 ShopSimulator 初始化至少 `N` 个环境，再使用同样的 `N`；建议从 4 开始。每个 worker 通过 reset 获得独占环境，主线程统一追加 raw JSONL，因此不会混淆轨迹或破坏断点续跑。
+
 ```bash
 PYTHONPATH=src python3 scripts/collect_sft_batch.py \
   --tasks data/shop_tasks.jsonl \
   --output-dir outputs/flash_accepted_500 \
   --limit 1000 --target-accepted 500 \
+  --workers 4 \
   --base-url "$SHOPSIM_BASE_URL" \
   --model deepseek-v4-flash \
   --thinking --reasoning-effort max

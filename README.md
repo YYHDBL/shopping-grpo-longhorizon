@@ -121,11 +121,14 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
 
 运行时会显示“已扫描任务数 / 候选上限”和 `accepted=当前/目标`；中断后用完全相同的命令续跑即可。
 
+`--workers` 可并发采集多条轨迹，但必须先把 ShopSimulator 启动为至少同样数量的环境；建议从 `--workers 4` 开始。每条轨迹仍独占一个环境，raw JSONL 由主线程顺序写入。
+
 ```bash
 PYTHONPATH=src python3 scripts/collect_sft_batch.py \
   --tasks data/shop_tasks.jsonl \
   --output-dir outputs/flash_accepted_500 \
   --limit 1000 --target-accepted 500 \
+  --workers 4 \
   --base-url "$SHOPSIM_BASE_URL" \
   --model deepseek-v4-flash \
   --thinking --reasoning-effort max

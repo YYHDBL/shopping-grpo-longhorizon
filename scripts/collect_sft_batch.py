@@ -9,13 +9,18 @@ import argparse
 import json
 import os
 import signal
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from shopping_grpo.sft_data import acceptance_reasons, process_raw_trajectories
 from shopping_grpo.teacher_rollout import (
     CollectionInfrastructureError,
     OpenAIChatClient,
+    _is_infrastructure_failure,
+    append_jsonl,
+    collect_for_task,
     collect_tasks,
+    completed_task_attempts,
     load_tasks,
     rollout_interrupted,
 )
@@ -54,6 +59,12 @@ def parse_args():
     parser.add_argument("--thinking", action="store_true")
     parser.add_argument("--reasoning-effort", choices=("high", "max"), default="high")
     parser.add_argument("--attempts-per-task", type=int, default=1)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="并发 rollout 数；必须不超过 ShopSimulator 已初始化的环境数。",
+    )
     return parser.parse_args()
 
 
@@ -109,32 +120,75 @@ def _collect_until_target(
     base_url,
     max_steps,
     attempts_per_task,
+    workers=1,
 ):
-    """逐任务复用采集器，到目标 accepted 数或候选任务耗尽时停止。"""
+    """并发采集，到精确目标 accepted 数或候选任务耗尽时停止。
+
+    raw JSONL 仅由主线程追加，避免 worker 间写入交错。投递中的任务数不会超过
+    尚需 accepted 数，因此即使所有在途轨迹都成功，也不会超过目标。
+    """
+    workers = int(workers)
+    if workers < 1:
+        raise ValueError("workers must be at least 1")
     accepted = _accepted_count(output_path)
     written = []
+    completed = completed_task_attempts(output_path)
+    candidates = [
+        (task, attempt_index)
+        for task in tasks
+        for attempt_index in range(attempts_per_task)
+        if (int(task["task_id"]), attempt_index) not in completed
+    ]
     progress = _progress_bar(
-        total=len(tasks), initial=0, target_accepted=target_accepted
+        total=len(candidates), initial=0, target_accepted=target_accepted
     )
     progress.set_postfix_str(f"accepted={accepted}/{target_accepted}")
-    try:
-        for task in tasks:
-            if accepted >= target_accepted:
-                break
-            new_rows = collect_tasks(
-                tasks=[task],
+    candidate_iter = iter(candidates)
+    pending = {}
+    infrastructure_failed = False
+
+    def submit_available(executor):
+        remaining = target_accepted - accepted
+        max_pending = min(workers, max(remaining, 0))
+        while len(pending) < max_pending:
+            try:
+                task, attempt_index = next(candidate_iter)
+            except StopIteration:
+                return
+            future = executor.submit(
+                collect_for_task,
+                task,
                 client=client,
-                output_path=output_path,
                 base_url=base_url,
                 max_steps=max_steps,
-                attempts_per_task=attempts_per_task,
+                attempt_index=attempt_index,
             )
-            written.extend(new_rows)
-            accepted += sum(acceptance_reasons(row)[0] for row in new_rows)
-            progress.update(1)
-            progress.set_postfix_str(f"accepted={accepted}/{target_accepted}")
+            pending[future] = (task, attempt_index)
+
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            submit_available(executor)
+            while pending:
+                completed_futures, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for future in completed_futures:
+                    pending.pop(future)
+                    trajectory = future.result()
+                    append_jsonl(output_path, [trajectory])
+                    written.append(trajectory)
+                    accepted += acceptance_reasons(trajectory)[0]
+                    infrastructure_failed |= _is_infrastructure_failure(trajectory)
+                    progress.update(1)
+                    progress.set_postfix_str(f"accepted={accepted}/{target_accepted}")
+                if infrastructure_failed:
+                    # 已在运行的轨迹由 executor 正常收尾；不再投递新任务。
+                    continue
+                submit_available(executor)
     finally:
         progress.close()
+    if infrastructure_failed:
+        raise CollectionInfrastructureError(
+            "ShopSimulator infrastructure failure; collection stopped before the next task"
+        )
     return written, accepted
 
 
@@ -148,6 +202,8 @@ def main():
         raise SystemExit("--limit must be at least 1")
     if args.target_accepted is not None and args.target_accepted < 1:
         raise SystemExit("--target-accepted must be at least 1")
+    if args.workers < 1:
+        raise SystemExit("--workers must be at least 1")
 
     # 与底层采集命令保持一致：收到中断后让当前 trajectory 走 finally 并归还租约。
     signal.signal(signal.SIGTERM, rollout_interrupted)
@@ -177,6 +233,7 @@ def main():
                 base_url=args.base_url,
                 max_steps=args.max_steps,
                 attempts_per_task=args.attempts_per_task,
+                workers=args.workers,
             )
         else:
             written, accepted = _collect_until_target(
