@@ -1,0 +1,5 @@
+# 仅在执行 LoRA SFT 时安装；采集环境不需要这些依赖。
+torch>=2.5
+transformers>=4.51,<5
+peft>=0.15,<1
+accelerate>=1,<2

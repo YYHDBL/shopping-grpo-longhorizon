@@ -136,6 +136,35 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
 
 完整的 6000 accepted 续跑和验收说明见 [docs/runbook.md](docs/runbook.md)。
 
+## LoRA SFT（采集完成后）
+
+训练只使用验收后的 `sft.jsonl`，先按 `task_id` 划分，避免同题轨迹同时出现在训练与验证集。训练实现采用 `Transformers + PEFT`，并根据目标 Qwen 的 `apply_chat_template` 只计算 assistant（包括 tool call）token 的 loss；user、tool observation 不参与 loss。
+
+```bash
+uv pip install -r requirements-sft.txt
+
+PYTHONPATH=src python3 scripts/split_sft_data.py \
+  --input outputs/flash_accepted_500_parallel/sft.jsonl \
+  --train outputs/flash_accepted_500_parallel/train.jsonl \
+  --validation outputs/flash_accepted_500_parallel/validation.jsonl
+
+PYTHONPATH=src python3 scripts/inspect_sft_data.py \
+  --model /path/to/Qwen3.5-0.8B \
+  --input outputs/flash_accepted_500_parallel/train.jsonl \
+  --show-example
+```
+
+预检通过后再训练。下例使用 bf16 和梯度检查点；模型或 GPU 不支持 bf16 时去掉 `--bf16`。
+
+```bash
+PYTHONPATH=src python3 scripts/train_lora_sft.py \
+  --model /path/to/Qwen3.5-0.8B \
+  --train outputs/flash_accepted_500_parallel/train.jsonl \
+  --validation outputs/flash_accepted_500_parallel/validation.jsonl \
+  --output checkpoints/qwen35-08b-shopping-lora \
+  --bf16 --gradient-checkpointing
+```
+
 ## 验证
 
 ```bash

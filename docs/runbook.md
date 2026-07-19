@@ -74,3 +74,37 @@ PYTHONPATH=src python3 scripts/build_sft_data.py \
 每次构造后读取 `outputs/accepted_6000/stats.json`，在 `accepted >= 6000` 时停止。如果已计划的尝试全部完成仍未达到目标，增加 task_id 范围或把尝试次数从 4 提升到 8；已有结果不会变化，只会新增 attempt 4 到 7。
 
 每个采样配置使用独立输出目录，以便追溯模型、温度、任务来源和重试策略，无需额外采集框架。
+
+## LoRA SFT 冷启动
+
+当 accepted 轨迹收集完成后，只训练同目录的 `sft.jsonl`。不要把 raw、rejected、goal、reward_detail 或环境隐藏信息喂给模型。先按 task_id 划分，以防同一个任务的多次尝试泄漏到验证集：
+
+```bash
+uv pip install -r requirements-sft.txt
+
+PYTHONPATH=src python3 scripts/split_sft_data.py \
+  --input outputs/flash_accepted_500_parallel/sft.jsonl \
+  --train outputs/flash_accepted_500_parallel/train.jsonl \
+  --validation outputs/flash_accepted_500_parallel/validation.jsonl \
+  --validation-ratio 0.05
+```
+
+训练前必须使用目标模型的 chat template 做预检；输出的 `assistant_label_preview` 应只包含 assistant 的文本和 tool call，不应包含用户需求或 tool observation：
+
+```bash
+PYTHONPATH=src python3 scripts/inspect_sft_data.py \
+  --model /path/to/Qwen3.5-0.8B \
+  --input outputs/flash_accepted_500_parallel/train.jsonl \
+  --show-example
+```
+
+预检通过后执行 LoRA SFT。默认 LoRA rank 为 16、训练 3 epoch；产物是 adapter，不覆盖 base model。中断后可通过 `--resume-from-checkpoint checkpoints/.../checkpoint-*` 续训：
+
+```bash
+PYTHONPATH=src python3 scripts/train_lora_sft.py \
+  --model /path/to/Qwen3.5-0.8B \
+  --train outputs/flash_accepted_500_parallel/train.jsonl \
+  --validation outputs/flash_accepted_500_parallel/validation.jsonl \
+  --output checkpoints/qwen35-08b-shopping-lora \
+  --bf16 --gradient-checkpointing
+```

@@ -46,29 +46,32 @@ class CollectSftBatchCliTest(unittest.TestCase):
 
     def test_target_collection_forwards_workers_to_parallel_scheduler(self):
         """目标模式必须把 CLI worker 数传给并发调度器，不能静默退化为串行。"""
-        with patch.object(
-            sys,
-            "argv",
-            [
-                "collect_sft_batch.py",
-                "--target-accepted",
-                "2",
-                "--workers",
-                "4",
-                "--llm-base-url",
-                "https://model.test/v1",
-                "--api-key",
-                "test-key",
-            ],
-        ), patch("scripts.collect_sft_batch.load_tasks", return_value=[]), patch(
-            "scripts.collect_sft_batch._collect_until_target", return_value=([], 0)
-        ) as collect, patch(
-            "scripts.collect_sft_batch._build_derivatives",
-            return_value={"total": 0, "accepted": 0, "rejected": 0},
-        ), patch("scripts.collect_sft_batch.signal.signal"):
-            from scripts.collect_sft_batch import main
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "collect_sft_batch.py",
+                    "--target-accepted",
+                    "2",
+                    "--workers",
+                    "4",
+                    "--output-dir",
+                    tmpdir,
+                    "--llm-base-url",
+                    "https://model.test/v1",
+                    "--api-key",
+                    "test-key",
+                ],
+            ), patch("scripts.collect_sft_batch.load_tasks", return_value=[]), patch(
+                "scripts.collect_sft_batch._collect_until_target", return_value=([], 0)
+            ) as collect, patch(
+                "scripts.collect_sft_batch._build_derivatives",
+                return_value={"total": 0, "accepted": 0, "rejected": 0},
+            ), patch("scripts.collect_sft_batch.signal.signal"):
+                from scripts.collect_sft_batch import main
 
-            main()
+                main()
 
         self.assertEqual(collect.call_args.kwargs["workers"], 4)
 
