@@ -233,7 +233,6 @@ def main():
                 base_url=args.base_url,
                 max_steps=args.max_steps,
                 attempts_per_task=args.attempts_per_task,
-                workers=args.workers,
             )
         else:
             written, accepted = _collect_until_target(
@@ -244,6 +243,7 @@ def main():
                 base_url=args.base_url,
                 max_steps=args.max_steps,
                 attempts_per_task=args.attempts_per_task,
+                workers=args.workers,
             )
             print(f"目标 accepted={args.target_accepted}，当前 accepted={accepted}")
         print(f"本次新增 {len(written)} 条 raw trajectory")
