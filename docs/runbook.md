@@ -20,6 +20,12 @@
 
 日常采集使用 `scripts/collect_sft_batch.py`。它在一个目录中维护 raw、accepted、rejected、统计和 SFT 文件；中断后重跑同一命令即可续跑，并从完整 raw 重建派生产物。例如先采集 100 个任务：
 
+首次执行先安装终端进度条依赖：
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
 ```bash
 PYTHONPATH=src python3 scripts/collect_sft_batch.py \
   --tasks data/shop_tasks.jsonl \
@@ -30,6 +36,8 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
 ```
 
 需要“收满 N 条 accepted”时，添加 `--target-accepted N`；`--limit` 只是候选任务上限，达到 accepted 目标即停止。例如 500 条目标可先给 1000 个候选任务，并根据实际通过率增加上限：
+
+进度条的主进度表示已扫描任务数，右侧 `accepted=当前/目标` 表示已经通过确定性验收的轨迹数。按 `Ctrl+C` 可安全中断当前轨迹并释放环境；之后原样重跑即可续跑。
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_sft_batch.py \

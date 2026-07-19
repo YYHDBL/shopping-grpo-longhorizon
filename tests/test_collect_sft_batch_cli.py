@@ -3,7 +3,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from scripts.collect_sft_batch import _collect_until_target, batch_paths, parse_args
 
@@ -40,6 +40,8 @@ class CollectSftBatchCliTest(unittest.TestCase):
     def test_collection_stops_after_target_number_of_accepted_trajectories(self):
         with patch("scripts.collect_sft_batch.collect_tasks") as collect, patch(
             "scripts.collect_sft_batch.acceptance_reasons", return_value=(True, [])
+        ), patch(
+            "scripts.collect_sft_batch._progress_bar", return_value=MagicMock()
         ):
             collect.side_effect = [[{"trajectory_id": "first"}], [{"trajectory_id": "second"}]]
             written, accepted = _collect_until_target(

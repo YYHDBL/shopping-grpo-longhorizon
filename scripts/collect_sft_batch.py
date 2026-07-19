@@ -83,6 +83,24 @@ def _accepted_count(raw_path):
         )
 
 
+def _progress_bar(total, initial, target_accepted):
+    """创建终端进度条；依赖缺失时给出明确的安装命令。"""
+    try:
+        from tqdm import tqdm
+    except ImportError as exc:
+        raise SystemExit(
+            "缺少 tqdm。请先执行：python3 -m pip install -r requirements.txt"
+        ) from exc
+    return tqdm(
+        total=total,
+        initial=initial,
+        desc="采集任务",
+        unit="task",
+        dynamic_ncols=True,
+        postfix={"accepted": f"{target_accepted} / {target_accepted}"},
+    )
+
+
 def _collect_until_target(
     tasks,
     target_accepted,
@@ -95,19 +113,28 @@ def _collect_until_target(
     """逐任务复用采集器，到目标 accepted 数或候选任务耗尽时停止。"""
     accepted = _accepted_count(output_path)
     written = []
-    for task in tasks:
-        if accepted >= target_accepted:
-            break
-        new_rows = collect_tasks(
-            tasks=[task],
-            client=client,
-            output_path=output_path,
-            base_url=base_url,
-            max_steps=max_steps,
-            attempts_per_task=attempts_per_task,
-        )
-        written.extend(new_rows)
-        accepted += sum(acceptance_reasons(row)[0] for row in new_rows)
+    progress = _progress_bar(
+        total=len(tasks), initial=0, target_accepted=target_accepted
+    )
+    progress.set_postfix_str(f"accepted={accepted}/{target_accepted}")
+    try:
+        for task in tasks:
+            if accepted >= target_accepted:
+                break
+            new_rows = collect_tasks(
+                tasks=[task],
+                client=client,
+                output_path=output_path,
+                base_url=base_url,
+                max_steps=max_steps,
+                attempts_per_task=attempts_per_task,
+            )
+            written.extend(new_rows)
+            accepted += sum(acceptance_reasons(row)[0] for row in new_rows)
+            progress.update(1)
+            progress.set_postfix_str(f"accepted={accepted}/{target_accepted}")
+    finally:
+        progress.close()
     return written, accepted
 
 

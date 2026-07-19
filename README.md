@@ -21,13 +21,19 @@ ShopSimulator -> Teacher rollout -> 规则验收 -> OpenAI tool-calling SFT JSON
 
 ## 配置
 
-项目只依赖 Python 标准库。ShopSimulator 需要作为相邻仓库单独启动。
+项目仅额外使用 `tqdm` 显示采集进度条；ShopSimulator 需要作为相邻仓库单独启动。
 
 ```bash
 cp .env.example .env
 set -a
 . ./.env
 set +a
+```
+
+首次运行还需安装进度条依赖：
+
+```bash
+python3 -m pip install -r requirements.txt
 ```
 
 `.env` 不会被 Python 自动读取；上述命令将它导出到当前 shell。不要提交 `.env`。
@@ -112,6 +118,8 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
 ```
 
 若目标是收集固定数量的 accepted 轨迹，使用 `--target-accepted`。`--limit` 此时表示最多尝试的任务数；达到目标后立即停止。例如使用 Flash 至多尝试前 1000 个任务，收集 500 条 accepted：
+
+运行时会显示“已扫描任务数 / 候选上限”和 `accepted=当前/目标`；中断后用完全相同的命令续跑即可。
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_sft_batch.py \
