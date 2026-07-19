@@ -77,21 +77,21 @@ PYTHONPATH=src python3 scripts/smoke_shop_env.py \
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/thinking/raw.jsonl \
   --base-url "$SHOPSIM_BASE_URL" --model deepseek-v4-flash \
-  --thinking --reasoning-effort high --limit 10 --max-steps 50
+  --thinking --reasoning-effort high --limit 10 --max-steps 35
 ```
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/one/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 50
+  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 35
 
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/ten/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 50
+  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 35
 
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/hundred/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 50
+  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 35
 ```
 
 将任一 raw JSONL 构造成 accepted、rejected、统计和标准 OpenAI messages JSONL：
@@ -106,7 +106,7 @@ PYTHONPATH=src python3 scripts/build_sft_data.py \
 ```
 
 推荐使用批次脚本采集并自动重建上述四类文件。相同 `--output-dir` 可直接断点续跑；
-默认采集前 100 个任务、每条最多 50 步。下面是当前 DeepSeek V4 Pro 思考模式的 100 条命令：
+默认采集前 100 个任务、每条最多 35 步。下面是当前 DeepSeek V4 Pro 思考模式的 100 条命令：
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_sft_batch.py \

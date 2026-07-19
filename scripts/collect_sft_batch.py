@@ -55,7 +55,12 @@ def parse_args():
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--timeout", type=int, default=180)
-    parser.add_argument("--max-steps", type=int, default=50)
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=35,
+        help="单条轨迹最多执行的工具步数；默认 35，避免长失败轨迹持续消耗采集时间。",
+    )
     parser.add_argument("--thinking", action="store_true")
     parser.add_argument("--reasoning-effort", choices=("high", "max"), default="high")
     parser.add_argument("--attempts-per-task", type=int, default=1)

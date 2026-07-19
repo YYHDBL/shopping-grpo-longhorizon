@@ -26,8 +26,8 @@ def parse_args():
     parser.add_argument(
         "--max-steps",
         type=int,
-        default=50,
-        help="单条轨迹最多执行的工具步数；默认 50，仍可按实验显式覆盖。",
+        default=35,
+        help="单条轨迹最多执行的工具步数；默认 35，仍可按实验显式覆盖。",
     )
     parser.add_argument("--thinking", action="store_true", help="开启 DeepSeek thinking mode")
     parser.add_argument("--reasoning-effort", choices=("high", "max"), default="high")

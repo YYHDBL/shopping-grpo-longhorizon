@@ -11,12 +11,12 @@ from scripts.collect_sft_batch import _collect_until_target, batch_paths, parse_
 
 class CollectSftBatchCliTest(unittest.TestCase):
     def test_defaults_target_a_resumable_hundred_task_batch(self):
-        """不传额外参数时，100 条采集使用独立目录和 50 步上限。"""
+        """不传额外参数时，100 条采集使用独立目录和 35 步上限。"""
         with patch.object(sys, "argv", ["collect_sft_batch.py"]):
             args = parse_args()
 
         self.assertEqual(args.limit, 100)
-        self.assertEqual(args.max_steps, 50)
+        self.assertEqual(args.max_steps, 35)
         self.assertEqual(args.output_dir, Path("outputs/collection_100"))
 
     def test_batch_paths_keep_raw_and_sft_derivatives_together(self):
