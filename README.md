@@ -111,6 +111,18 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
   --thinking --reasoning-effort max
 ```
 
+若目标是收集固定数量的 accepted 轨迹，使用 `--target-accepted`。`--limit` 此时表示最多尝试的任务数；达到目标后立即停止。例如使用 Flash 至多尝试前 1000 个任务，收集 500 条 accepted：
+
+```bash
+PYTHONPATH=src python3 scripts/collect_sft_batch.py \
+  --tasks data/shop_tasks.jsonl \
+  --output-dir outputs/flash_accepted_500 \
+  --limit 1000 --target-accepted 500 \
+  --base-url "$SHOPSIM_BASE_URL" \
+  --model deepseek-v4-flash \
+  --thinking --reasoning-effort max
+```
+
 完整的 6000 accepted 续跑和验收说明见 [docs/runbook.md](docs/runbook.md)。
 
 ## 验证

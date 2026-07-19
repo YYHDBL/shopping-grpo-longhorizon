@@ -29,6 +29,18 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
   --thinking --reasoning-effort max
 ```
 
+需要“收满 N 条 accepted”时，添加 `--target-accepted N`；`--limit` 只是候选任务上限，达到 accepted 目标即停止。例如 500 条目标可先给 1000 个候选任务，并根据实际通过率增加上限：
+
+```bash
+PYTHONPATH=src python3 scripts/collect_sft_batch.py \
+  --tasks data/shop_tasks.jsonl \
+  --output-dir outputs/flash_accepted_500 \
+  --limit 1000 --target-accepted 500 \
+  --base-url "$SHOPSIM_BASE_URL" \
+  --model deepseek-v4-flash \
+  --thinking --reasoning-effort max
+```
+
 目标为 6000 条 accepted 时，任务数应显著多于 6000，并设定固定尝试次数。当前环境可导出 23,421 个 task_id；例如前 8,000 个任务、每个任务 4 次尝试，最多产生 32,000 条 raw trajectory。
 
 ```bash
