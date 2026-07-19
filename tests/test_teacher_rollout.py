@@ -154,6 +154,8 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertIn("不要在购买前输出最终答复", SYSTEM_PROMPT)
         self.assertIn("选中规格后才显示", SYSTEM_PROMPT)
         self.assertIn("同一规格组只能选择一个值", SYSTEM_PROMPT)
+        self.assertIn("选中规格即结束探索阶段", SYSTEM_PROMPT)
+        self.assertIn("不得查看子页、返回搜索、再次搜索或打开其他商品", SYSTEM_PROMPT)
         self.assertIn("只有按钮实际出现才可调用", SYSTEM_PROMPT)
         self.assertIn("用户硬约束", SYSTEM_PROMPT)
         self.assertIn("任一硬约束未在当前页面证实，不得购买", SYSTEM_PROMPT)
