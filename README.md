@@ -187,6 +187,8 @@ PYTHONPATH=src python3 scripts/inspect_sft_data.py \
   --show-example
 ```
 
+需要在线查看训练曲线时，使用国内 SwanLab。先在服务器执行一次 `swanlab login`，再在训练命令中添加 `--swanlab`。它记录 Trainer 的 train/eval loss、学习率、梯度范数，以及本项目补充的单步耗时和峰值显存；日志写入本次 adapter 输出目录下的 `swanlab/`。不传该开关不会加载监控服务，也不影响训练。
+
 预检通过后再训练。下例使用 bf16 和梯度检查点；模型或 GPU 不支持 bf16 时去掉 `--bf16`。
 
 ```bash
@@ -195,7 +197,9 @@ PYTHONPATH=src python3 scripts/train_lora_sft.py \
   --train outputs/flash_accepted_500_parallel/train.jsonl \
   --validation outputs/flash_accepted_500_parallel/validation.jsonl \
   --output checkpoints/qwen35-2b-shopping-lora \
-  --bf16 --gradient-checkpointing
+  --bf16 --gradient-checkpointing \
+  --swanlab --swanlab-project shopping-grpo \
+  --swanlab-run-name qwen35-2b-shopping-lora-v1
 ```
 
 ## 验证

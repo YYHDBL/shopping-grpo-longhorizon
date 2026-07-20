@@ -19,6 +19,7 @@ experiments/
 # `experiments/` 忽略的是训练产物；项目实验记录属于文档，需要随代码同步。
 !docs/experiments/
 !docs/experiments/**
+swanlog/
 
 docs/references/papers/*.pdf
 wandb/

@@ -6,3 +6,5 @@ peft>=0.15,<1
 accelerate>=1,<2
 torchvision
 pillow
+# 国内实验跟踪；Transformers >=4.50 可通过 report_to="swanlab" 原生集成。
+swanlab>=0.8,<1

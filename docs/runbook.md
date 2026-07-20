@@ -113,6 +113,10 @@ PYTHONPATH=src python3 scripts/split_sft_data.py \
   --validation-ratio 0.05
 ```
 
+### 训练监控（可选）
+
+本项目使用 SwanLab，不依赖 W&B。首次在线使用前在服务器执行 `swanlab login`；训练时加 `--swanlab` 即可。SwanLab 由 Transformers 原生集成，自动记录 train/eval loss、learning rate、grad norm 和硬件信息；训练脚本额外写入 step time 与峰值显存。日志固定保存到本次 `--output` 目录的 `swanlab/`，未启用时训练不受影响。若只想保存本地日志，将 `--swanlab-mode local` 传入训练命令。
+
 训练前必须使用目标模型的 chat template 做预检；输出的 `assistant_label_preview` 应只包含 assistant 的文本和 tool call，不应包含用户需求或 tool observation：
 
 ```bash
@@ -131,5 +135,7 @@ PYTHONPATH=src python3 scripts/train_lora_sft.py \
   --train outputs/flash_accepted_500_parallel/train.jsonl \
   --validation outputs/flash_accepted_500_parallel/validation.jsonl \
   --output checkpoints/qwen35-2b-shopping-lora \
-  --bf16 --gradient-checkpointing
+  --bf16 --gradient-checkpointing \
+  --swanlab --swanlab-project shopping-grpo \
+  --swanlab-run-name qwen35-2b-shopping-lora-v1
 ```
