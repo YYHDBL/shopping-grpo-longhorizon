@@ -21,3 +21,5 @@ experiments/
 !docs/experiments/**
 
 docs/references/papers/*.pdf
+wandb/
+logs/

@@ -126,31 +126,35 @@ def build_supervised_example(messages, tools, tokenizer, max_length=8192, chat_t
 
 def load_supervised_examples(path, tokenizer, max_length=8192, chat_template=None):
     """读取本仓库生成的 SFT JSONL，并报告被模板拒绝的样本数。"""
+    try:
+        from tqdm import tqdm as _tqdm
+    except ImportError:
+        _tqdm = lambda it, **kw: it
+
     examples = []
     stats = {"total": 0, "kept": 0, "dropped": 0}
-    with Path(path).open(encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            stats["total"] += 1
-            try:
-                row = json.loads(line)
-                example = build_supervised_example(
-                    messages=row["messages"],
-                    tools=row.get("tools") or [],
-                    tokenizer=tokenizer,
-                    max_length=max_length,
-                    chat_template=chat_template,
-                )
-            except (KeyError, TypeError, json.JSONDecodeError):
-                example = None
-            if example is None:
-                stats["dropped"] += 1
-                continue
-            example["task_id"] = row.get("task_id")
-            example["trajectory_id"] = row.get("trajectory_id")
-            examples.append(example)
-            stats["kept"] += 1
+    text = Path(path).read_text(encoding="utf-8")
+    lines = [l for l in text.splitlines() if l.strip()]
+    stats["total"] = len(lines)
+    for line in _tqdm(lines, desc=f"  Tokenizing {Path(path).name}", unit=" samples"):
+        try:
+            row = json.loads(line)
+            example = build_supervised_example(
+                messages=row["messages"],
+                tools=row.get("tools") or [],
+                tokenizer=tokenizer,
+                max_length=max_length,
+                chat_template=chat_template,
+            )
+        except (KeyError, TypeError, json.JSONDecodeError):
+            example = None
+        if example is None:
+            stats["dropped"] += 1
+            continue
+        example["task_id"] = row.get("task_id")
+        example["trajectory_id"] = row.get("trajectory_id")
+        examples.append(example)
+        stats["kept"] += 1
     return examples, stats
 
 
