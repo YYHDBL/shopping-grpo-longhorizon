@@ -50,6 +50,7 @@ class OpenAIChatClient:
         temperature=0.0,
         top_p=1.0,
         timeout=60,
+        max_tokens=512,
         thinking=False,
         reasoning_effort="high",
         transport=None,
@@ -60,6 +61,9 @@ class OpenAIChatClient:
         self.temperature = float(temperature)
         self.top_p = float(top_p)
         self.timeout = timeout
+        self.max_tokens = int(max_tokens)
+        if self.max_tokens < 1:
+            raise ValueError("max_tokens must be positive")
         self.thinking = bool(thinking)
         self.reasoning_effort = reasoning_effort
         self.transport = transport
@@ -70,6 +74,9 @@ class OpenAIChatClient:
             "messages": messages,
             "tools": tools,
             "tool_choice": "auto",
+            # 约束单个 assistant 回合的输出；--max-model-len 只限制上下文，
+            # 不能防止模型在未调用工具时持续生成纯文本。
+            "max_tokens": self.max_tokens,
         }
         if self.thinking:
             # DeepSeek tool-call thinking requires reasoning_content in later messages.
@@ -442,6 +449,7 @@ def client_from_env(
     temperature=0.0,
     top_p=1.0,
     timeout=60,
+    max_tokens=512,
     thinking=False,
     reasoning_effort="high",
 ):
@@ -455,6 +463,7 @@ def client_from_env(
         temperature=temperature,
         top_p=top_p,
         timeout=timeout,
+        max_tokens=max_tokens,
         thinking=thinking,
         reasoning_effort=reasoning_effort,
     )

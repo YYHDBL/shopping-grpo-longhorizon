@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--max-tokens", type=int, default=512, help="单次模型生成 token 上限")
     parser.add_argument(
         "--max-steps",
         type=int,
@@ -58,6 +59,7 @@ def main():
         temperature=args.temperature,
         top_p=args.top_p,
         timeout=args.timeout,
+        max_tokens=args.max_tokens,
         thinking=args.thinking,
         reasoning_effort=args.reasoning_effort,
     )

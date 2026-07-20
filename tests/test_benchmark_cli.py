@@ -54,6 +54,7 @@ class BenchmarkCliTest(unittest.TestCase):
             args = parse_args()
 
         self.assertEqual(args.max_steps, 35)
+        self.assertEqual(args.max_tokens, 512)
         self.assertEqual(args.temperature, 0.0)
 
 

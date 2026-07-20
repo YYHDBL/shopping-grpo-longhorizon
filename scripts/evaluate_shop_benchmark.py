@@ -22,6 +22,12 @@ def parse_args():
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=512,
+        help="单次模型生成上限；防止未调用工具时耗尽完整上下文。",
+    )
     return parser.parse_args()
 
 
@@ -37,6 +43,8 @@ def main():
     args = parse_args()
     if args.max_steps < 1:
         raise SystemExit("--max-steps 必须为正数")
+    if args.max_tokens < 1:
+        raise SystemExit("--max-tokens 必须为正数")
     tasks = load_tasks(args.benchmark)
     client = OpenAIChatClient(
         model=args.model,
@@ -45,6 +53,7 @@ def main():
         temperature=args.temperature,
         top_p=args.top_p,
         timeout=args.timeout,
+        max_tokens=args.max_tokens,
     )
     collect_tasks(
         tasks,
@@ -60,6 +69,7 @@ def main():
         "benchmark": str(args.benchmark),
         "model": args.model,
         "max_steps": args.max_steps,
+        "max_tokens": args.max_tokens,
         "temperature": args.temperature,
         "top_p": args.top_p,
     }

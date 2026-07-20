@@ -585,9 +585,30 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertEqual(captured["url"], "https://api.example.test/v1/chat/completions")
         self.assertEqual(captured["payload"]["model"], "deepseek-chat")
         self.assertEqual(captured["payload"]["tools"], [{"type": "function"}])
+        self.assertEqual(captured["payload"]["max_tokens"], 512)
         self.assertEqual(captured["payload"]["temperature"], 0.2)
         self.assertEqual(captured["headers"]["Authorization"], "Bearer secret")
         self.assertEqual(captured["headers"]["User-Agent"], "shopping-grpo-longhorizon/0.1")
+
+    def test_openai_client_allows_bounded_completion_override(self):
+        """本地推理服务必须收到单次生成上限，避免无工具文本耗尽上下文。"""
+        captured = {}
+
+        def transport(url, payload, headers, timeout):
+            captured.update({"payload": payload})
+            return {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+        client = OpenAIChatClient(
+            model="Qwen/Qwen3.5-2B",
+            base_url="http://127.0.0.1:8000/v1",
+            api_key="EMPTY",
+            max_tokens=256,
+            transport=transport,
+        )
+
+        client.complete([{"role": "user", "content": "hi"}], tools=[])
+
+        self.assertEqual(captured["payload"]["max_tokens"], 256)
 
     def test_openai_client_thinking_mode_keeps_reasoning_for_tool_follow_up(self):
         captured = {}

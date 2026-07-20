@@ -139,7 +139,7 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
 
 ## 固定 benchmark 与 Base / SFT / GRPO 对比
 
-仓库附带 `benchmark_v1`：200 个与当前 SFT 数据严格隔离的单轮 task。其指标口径和校验和见 [data/benchmarks/README.md](data/benchmarks/README.md)。Base、SFT、GRPO 必须使用完全相同的 task、工具 schema、temperature=0 与 max_steps=35。
+仓库附带 `benchmark_v1`：200 个与当前 SFT 数据严格隔离的单轮 task。其指标口径和校验和见 [data/benchmarks/README.md](data/benchmarks/README.md)。Base、SFT、GRPO 必须使用完全相同的 task、工具 schema、temperature=0、max_steps=35 与 max_tokens=512。
 
 若当前 SFT 快照更新，需要重新创建**新版本** benchmark；不要改写 v1：
 
@@ -162,6 +162,7 @@ PYTHONPATH=src python3 scripts/evaluate_shop_benchmark.py \
   --base-url http://127.0.0.1:5700 \
   --model Qwen/Qwen3.5-2B \
   --llm-base-url http://127.0.0.1:8000/v1 \
+  --max-tokens 512 \
   --api-key EMPTY
 ```
 
