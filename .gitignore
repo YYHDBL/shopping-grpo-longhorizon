@@ -5,8 +5,14 @@ __pycache__/
 .DS_Store
 .venv/
 venv/
+.env
 
-outputs/
+# 发布当前正式采集批次的完整产物；其他临时 output 仍不入库。
+outputs/*
+!outputs/flash_accepted_500_parallel/
+!outputs/flash_accepted_500_parallel/**
+# raw 的可下载发布形式是同目录 raw.jsonl.gz；未压缩源只保留本地用于续跑。
+outputs/flash_accepted_500_parallel/raw.jsonl
 checkpoints/
 models/
 experiments/
