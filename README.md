@@ -72,7 +72,7 @@ PYTHONPATH=src python3 scripts/smoke_shop_env.py \
 
 1、10、100 个任务分别只需更换 `--limit`。以下命令的 `--limit` 限制任务数，不保证同样数量的 accepted 轨迹。
 
-使用 DeepSeek V4 Flash 思考模式时，显式指定模型和开关。rollout 会在 raw 中保留并回传 `reasoning_content` 以支持 tool calling；构造 SFT JSONL 时会将可保留的推理转写进标准 assistant `content` 的 `<think>` 标签，不保留 provider 专有字段。
+使用 DeepSeek V4 Flash 思考模式时，显式指定模型和开关。rollout 会在 raw 中保留 `reasoning_content`，以维持 Teacher 的工具调用上下文和支持后续审计；**SFT 构造默认不把它写入训练 messages**，只训练 assistant 的工具调用。若要复现 Full-CoT 消融，才显式传 `--retain-teacher-reasoning`。
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
@@ -189,7 +189,7 @@ PYTHONPATH=src python3 scripts/inspect_sft_data.py \
 
 需要在线查看训练曲线时，使用国内 SwanLab。先在服务器执行一次 `swanlab login`，再在训练命令中添加 `--swanlab`。它记录 Trainer 的 train/eval loss、学习率、梯度范数，以及本项目补充的单步耗时和峰值显存；日志写入本次 adapter 输出目录下的 `swanlab/`。不传该开关不会加载监控服务，也不影响训练。
 
-预检通过后再训练。下例使用 bf16 和梯度检查点；模型或 GPU 不支持 bf16 时去掉 `--bf16`。
+预检通过后再训练。下例使用 bf16 和梯度检查点；模型或 GPU 不支持 bf16 时去掉 `--bf16`。默认 SFT 是 Action-only；对已发布的旧 Full-CoT 快照，请先由 `raw.jsonl.gz` 重建新的 Action-only `sft.jsonl`，具体命令见 [实验 03](docs/experiments/03-sft-v2-memory-and-action-only-2026-07-20.md)。
 
 ```bash
 PYTHONPATH=src python3 scripts/train_lora_sft.py \

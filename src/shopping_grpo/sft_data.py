@@ -55,7 +55,8 @@ def acceptance_reasons(trajectory):
     return len(reasons) == 0, reasons
 
 
-def build_sft_row(trajectory):
+def build_sft_row(trajectory, retain_reasoning=False):
+    """构造 SFT 行；默认只学习动作，不模仿 Teacher 的长思考。"""
     terminal_tool_call_id = _terminal_tool_call_id(trajectory)
     blocked_call_ids = {
         (blocked.get("tool_call") or {}).get("id")
@@ -66,14 +67,17 @@ def build_sft_row(trajectory):
         "trajectory_id": trajectory.get("trajectory_id"),
         "task_id": trajectory.get("task_id"),
         "messages": _training_messages(
-            trajectory.get("messages", []), blocked_call_ids, terminal_tool_call_id
+            trajectory.get("messages", []),
+            blocked_call_ids,
+            terminal_tool_call_id,
+            retain_reasoning=retain_reasoning,
         ),
         "tools": SHOP_TOOL_SCHEMAS,
     }
 
 
-def _training_messages(messages, blocked_call_ids, terminal_tool_call_id):
-    """移除守卫对话；守卫后的下一轮推理也不能作为训练目标。"""
+def _training_messages(messages, blocked_call_ids, terminal_tool_call_id, retain_reasoning=False):
+    """移除守卫对话；默认不把 Teacher reasoning 写进训练目标。"""
     clean_messages = []
     follows_runtime_guard = False
     for message in messages:
@@ -84,7 +88,7 @@ def _training_messages(messages, blocked_call_ids, terminal_tool_call_id):
             _sanitize_message(
                 message,
                 terminal_tool_call_id,
-                retain_reasoning=not follows_runtime_guard,
+                retain_reasoning=retain_reasoning and not follows_runtime_guard,
             )
         )
         follows_runtime_guard = False
@@ -101,7 +105,14 @@ def _is_blocked_training_message(message, blocked_call_ids):
     return False
 
 
-def process_raw_trajectories(raw_path, accepted_path, rejected_path, stats_path, sft_path):
+def process_raw_trajectories(
+    raw_path,
+    accepted_path,
+    rejected_path,
+    stats_path,
+    sft_path,
+    retain_reasoning=False,
+):
     accepted_rows = []
     rejected_rows = []
     sft_rows = []
@@ -111,7 +122,7 @@ def process_raw_trajectories(raw_path, accepted_path, rejected_path, stats_path,
         accepted, reasons = acceptance_reasons(trajectory)
         if accepted:
             accepted_rows.append(trajectory)
-            sft_rows.append(build_sft_row(trajectory))
+            sft_rows.append(build_sft_row(trajectory, retain_reasoning=retain_reasoning))
         else:
             rejected = {
                 "trajectory_id": trajectory.get("trajectory_id"),
@@ -130,6 +141,7 @@ def process_raw_trajectories(raw_path, accepted_path, rejected_path, stats_path,
         "accepted": len(accepted_rows),
         "rejected": len(rejected_rows),
         "reject_reasons": dict(sorted(reason_counts.items())),
+        "retain_teacher_reasoning": bool(retain_reasoning),
     }
     Path(stats_path).parent.mkdir(parents=True, exist_ok=True)
     Path(stats_path).write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

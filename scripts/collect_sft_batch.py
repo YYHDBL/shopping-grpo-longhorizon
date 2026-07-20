@@ -75,7 +75,7 @@ def parse_args():
 
 
 def _build_derivatives(paths):
-    """从 raw 重建所有派生产物，确保 accepted 与 SFT 使用同一验收规则。"""
+    """从 raw 重建 Action-only SFT；思考仅保留在 raw 供审计，不参与训练。"""
     if not paths["raw"].exists():
         return {"total": 0, "accepted": 0, "rejected": 0, "reject_reasons": {}}
     return process_raw_trajectories(

@@ -1,0 +1,8 @@
+# 仅用于 SFT A/B/C/D 显存实验；基础 LoRA 使用 requirements-sft.txt 即可。
+-r requirements-sft.txt
+
+# D：NF4 QLoRA 的 4-bit 基座加载。
+bitsandbytes>=0.45,<1
+
+# B/C/D：融合 LM Head 与交叉熵，避免完整 logits 常驻显存。
+liger-kernel>=0.6,<1

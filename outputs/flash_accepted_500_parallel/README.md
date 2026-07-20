@@ -8,6 +8,8 @@
 - 验收规则：工具调用合法、执行购买、环境结束，且 `r_type`、`r_att`、`r_option`、`r_price` 均为 1；这些隐藏验收字段不会写入训练 messages。
 - SHA-256：`7b1d82ed8c18c6fbd23af89a574258d040c4c6db8d1ba9d9512fc1e418abc3fa`
 
+> 说明：本快照的 `sft.jsonl` 是历史 Full-CoT 数据，包含 Teacher 的 `<think>` 内容，已用于 SFT v1。自实验 03 起，正式训练默认改为 Action-only；请从本目录的 `raw.jsonl.gz` 重建到新的输出目录，不要静默覆盖这个历史快照。命令见 [实验 03](../../docs/experiments/03-sft-v2-memory-and-action-only-2026-07-20.md)。
+
 未压缩的 `raw.jsonl` 为 118MB，超过 GitHub 普通 Git 的单文件限制；仓库发布其 gzip 版本 `raw.jsonl.gz`（约 14MB）。需要原始 JSONL 时执行 `gzip -dk raw.jsonl.gz`。未压缩源只保留在本地，便于断点续跑。
 
 这是当前阶段的可复现训练快照，不是最终 500 条目标。后续数据扩充会以新快照和新校验和发布，避免静默改写已训练的数据版本。

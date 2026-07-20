@@ -8,6 +8,8 @@
 |---|---|---|---|
 | 00 | [单轮轨迹采集与确定性验收](00-data-collection-2026-07-20.md) | 已完成快照 | 757 条 raw → 380 条 accepted |
 | 01 | [Qwen3.5-2B Instruct 零样本基线](01-qwen35-2b-instruct-baseline-2026-07-20.md) | 已完成首轮 | 200 条完成；严格成功率 0%，原始产物待服务器同步 |
+| 02 | [LoRA SFT v1：首轮冷启动](02-sft-v1-pitfalls-2026-07-20.md) | 已完成首轮 | 12K Full-CoT SFT 首次达到约 5% 严格成功率，同时暴露长上下文 OOM 与长轨迹问题 |
+| 03 | [SFT v2：显存实验与 Action-only 决策](03-sft-v2-memory-and-action-only-2026-07-20.md) | 待运行 | A/B/C/D 显存 smoke；正式 SFT 改为不训练 Teacher thinking |
 
 ## 尚未启动：先放模板，禁止预填结果
 

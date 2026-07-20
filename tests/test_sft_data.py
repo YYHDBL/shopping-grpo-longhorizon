@@ -212,7 +212,7 @@ class SftDataTest(unittest.TestCase):
         self.assertTrue(accepted)
         self.assertEqual(reasons, [])
 
-    def test_build_sft_row_keeps_only_training_messages_and_tools(self):
+    def test_build_sft_row_is_action_only_by_default(self):
         traj = accepted_trajectory()
         traj["messages"][2]["reasoning_content"] = "这是 Teacher 的内部推理，只用于 rollout 连贯性。"
         invalid = assistant_tool("view_features", {}, "blocked_call")
@@ -240,7 +240,7 @@ class SftDataTest(unittest.TestCase):
         self.assertNotIn("reward_detail", payload)
         self.assertNotIn('"goal"', payload)
         self.assertNotIn('"purchase"', payload)
-        self.assertIn("<think>这是 Teacher 的内部推理，只用于 rollout 连贯性。</think>", payload)
+        self.assertNotIn("这是 Teacher 的内部推理，只用于 rollout 连贯性。", payload)
         self.assertNotIn("guard_only_reasoning", payload)
         self.assertNotIn("reasoning_content", payload)
         self.assertNotIn("未执行", payload)
@@ -248,6 +248,14 @@ class SftDataTest(unittest.TestCase):
         self.assertNotIn("Reward", payload)
         self.assertNotIn("Goal", payload)
         self.assertEqual(row["messages"][-2]["tool_calls"][0]["function"]["name"], "buy_now")
+
+    def test_build_sft_row_can_explicitly_retain_teacher_reasoning_for_ablation_only(self):
+        traj = accepted_trajectory()
+        traj["messages"][2]["reasoning_content"] = "仅供 Full-CoT 对照实验。"
+
+        row = build_sft_row(traj, retain_reasoning=True)
+
+        self.assertIn("<think>仅供 Full-CoT 对照实验。</think>", json.dumps(row, ensure_ascii=False))
 
     def test_process_raw_trajectories_writes_accepted_rejected_and_sft_jsonl(self):
         bad = accepted_trajectory()

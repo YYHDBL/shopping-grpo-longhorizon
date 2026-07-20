@@ -12,6 +12,11 @@ def parse_args():
     parser.add_argument("--rejected", type=Path, default=Path("outputs/sft/rejected_trajectories.jsonl"))
     parser.add_argument("--stats", type=Path, default=Path("outputs/sft/reject_stats.json"))
     parser.add_argument("--sft", type=Path, default=Path("outputs/sft/openai_messages.jsonl"))
+    parser.add_argument(
+        "--retain-teacher-reasoning",
+        action="store_true",
+        help="仅用于 Full-CoT 消融；默认 Action-only，不训练 Teacher thinking。",
+    )
     return parser.parse_args()
 
 
@@ -23,6 +28,7 @@ def main():
         rejected_path=args.rejected,
         stats_path=args.stats,
         sft_path=args.sft,
+        retain_reasoning=args.retain_teacher_reasoning,
     )
     print(summary)
 

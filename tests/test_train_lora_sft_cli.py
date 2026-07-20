@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 from scripts.train_lora_sft import (
     DEFAULT_TARGET_MODULES,
+    _model_load_kwargs,
+    _prepare_model_for_training,
     _load_preprocessing_components,
     _swanlab_config,
     parse_args,
@@ -53,6 +55,20 @@ class _FakeAutoProcessor:
         del model_name, trust_remote_code
         cls.called = True
         return _FakeProcessor()
+
+
+class _FakeBitsAndBytesConfig:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
+class _FakeModel:
+    def __init__(self):
+        self.config = type("Config", (), {"use_cache": True})()
+        self.input_grads_enabled = False
+
+    def enable_input_require_grads(self):
+        self.input_grads_enabled = True
 
 
 class TrainLoraSftCliTest(unittest.TestCase):
@@ -108,8 +124,8 @@ class TrainLoraSftCliTest(unittest.TestCase):
         self.assertEqual(args.swanlab_project, "shopping-agent")
         self.assertEqual(args.swanlab_run_name, "qwen35-2b-lora-v1")
 
-    def test_swanlab_config_uses_output_scoped_log_directory(self):
-        """监控日志必须随本次训练产物存放，不能污染仓库根目录。"""
+    def test_swanlab_config_returns_a_stable_default_run_name(self):
+        """SwanLab 由 main 中的显式 init 配置；此处只验证纯配置函数。"""
         with patch.object(
             sys,
             "argv",
@@ -131,9 +147,6 @@ class TrainLoraSftCliTest(unittest.TestCase):
         with patch.dict(sys.modules, {"swanlab": object()}), patch.dict(os.environ, {}, clear=True):
             report_to, run_name = _swanlab_config(args)
             self.assertEqual(report_to, "swanlab")
-            self.assertEqual(os.environ["SWANLAB_PROJECT"], "shopping-grpo")
-            self.assertEqual(os.environ["SWANLAB_MODE"], "local")
-            self.assertEqual(os.environ["SWANLAB_LOGDIR"], "outputs/run/adapter/swanlab")
             self.assertIn("lora-r16", run_name)
 
     def test_qwen35_uses_processor_template_and_underlying_tokenizer(self):
@@ -154,6 +167,55 @@ class TrainLoraSftCliTest(unittest.TestCase):
         """Qwen3.5 的 3/4 层是 Gated DeltaNet，不能只训练少数全注意力层。"""
         self.assertIn("in_proj_qkv", DEFAULT_TARGET_MODULES)
         self.assertIn("out_proj", DEFAULT_TARGET_MODULES)
+
+    def test_acceleration_flags_build_liger_sdpa_and_standard_qlora_configuration(self):
+        """D 组必须在 C 的 SDPA 基础上显式添加 NF4 QLoRA，而非传递未验证的 dict。"""
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "train_lora_sft.py",
+                "--model", "Qwen/Qwen3.5-2B",
+                "--train", "outputs/train.jsonl",
+                "--output", "outputs/adapter",
+                "--liger-kernel",
+                "--attention-implementation", "sdpa",
+                "--qlora",
+            ],
+        ):
+            args = parse_args()
+
+        kwargs = _model_load_kwargs(args, dtype="bf16", bits_and_bytes_config=_FakeBitsAndBytesConfig)
+        self.assertTrue(args.liger_kernel)
+        self.assertEqual(kwargs["attn_implementation"], "sdpa")
+        self.assertIsInstance(kwargs["quantization_config"], _FakeBitsAndBytesConfig)
+        self.assertEqual(kwargs["quantization_config"].kwargs["bnb_4bit_quant_type"], "nf4")
+        self.assertEqual(kwargs["quantization_config"].kwargs["bnb_4bit_compute_dtype"], "bf16")
+
+    def test_qlora_prepares_model_before_lora_and_keeps_gradient_checkpointing_compatible(self):
+        """量化基座必须先做 PEFT 标准预处理，再由后续 LoRA 注入 adapter。"""
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "train_lora_sft.py",
+                "--model", "Qwen/Qwen3.5-2B",
+                "--train", "outputs/train.jsonl",
+                "--output", "outputs/adapter",
+                "--qlora",
+                "--gradient-checkpointing",
+            ],
+        ):
+            args = parse_args()
+        model = _FakeModel()
+        prepared = _FakeModel()
+        prepare = unittest.mock.MagicMock(return_value=prepared)
+
+        result = _prepare_model_for_training(model, args, prepare)
+
+        self.assertIs(result, prepared)
+        prepare.assert_called_once_with(model, use_gradient_checkpointing=True)
+        self.assertFalse(result.config.use_cache)
 
 
 if __name__ == "__main__":  # pragma: no cover

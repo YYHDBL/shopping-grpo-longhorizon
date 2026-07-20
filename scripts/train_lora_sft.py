@@ -47,7 +47,14 @@ def parse_args():
     parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument("--target-modules", nargs="+", default=DEFAULT_TARGET_MODULES)
     parser.add_argument("--bf16", action="store_true", help="使用 bf16；支持的 CUDA GPU 建议开启")
-    parser.add_argument("--qlora", action="store_true", help="4-bit 量化加载基座模型，大幅降低显存")
+    parser.add_argument("--liger-kernel", action="store_true", help="启用 Liger 融合 loss，避免全序列 logits 常驻")
+    parser.add_argument(
+        "--attention-implementation",
+        choices=("auto", "sdpa"),
+        default="auto",
+        help="注意力后端；sdpa 使用 PyTorch 原生内存高效实现，不要求编译 FlashAttention 2。",
+    )
+    parser.add_argument("--qlora", action="store_true", help="以 NF4 4-bit 加载基座，并按 PEFT 标准预处理")
     parser.add_argument("--gradient-checkpointing", action="store_true")
     parser.add_argument("--logging-steps", type=int, default=5)
     parser.add_argument("--save-total-limit", type=int, default=2)
@@ -69,15 +76,16 @@ def parse_args():
 def _training_dependencies():
     try:
         import torch
-        from peft import LoraConfig, TaskType, get_peft_model
+        from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
         from transformers import (
             AutoConfig,
             AutoModelForCausalLM,
             AutoModelForMultimodalLM,
             AutoProcessor,
             AutoTokenizer,
-        Trainer,
-        TrainerCallback,
+            BitsAndBytesConfig,
+            Trainer,
+            TrainerCallback,
             TrainingArguments,
         )
     except ImportError as exc:
@@ -87,15 +95,59 @@ def _training_dependencies():
         LoraConfig,
         TaskType,
         get_peft_model,
+        prepare_model_for_kbit_training,
         AutoConfig,
         AutoModelForCausalLM,
         AutoModelForMultimodalLM,
         AutoProcessor,
         AutoTokenizer,
+        BitsAndBytesConfig,
         Trainer,
         TrainerCallback,
         TrainingArguments,
     )
+
+
+def _model_load_kwargs(args, dtype, bits_and_bytes_config):
+    """构造可审计的模型加载参数；加速功能必须显式开启。"""
+    kwargs = {"torch_dtype": dtype, "trust_remote_code": True}
+    if args.attention_implementation != "auto":
+        kwargs["attn_implementation"] = args.attention_implementation
+    if args.qlora:
+        kwargs["quantization_config"] = bits_and_bytes_config(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=dtype,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+    return kwargs
+
+
+def _prepare_model_for_training(model, args, prepare_model_for_kbit_training):
+    """按 PEFT 推荐顺序准备量化模型与梯度检查点。"""
+    if args.qlora:
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=args.gradient_checkpointing
+        )
+    if args.gradient_checkpointing:
+        model.config.use_cache = False
+        if not args.qlora and hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+    return model
+
+
+def _validate_optional_training_dependencies(args):
+    """仅在所选实验需要时检查可选加速包，保持基础 LoRA 环境轻量。"""
+    if args.qlora:
+        try:
+            import bitsandbytes  # noqa: F401
+        except ImportError as exc:
+            raise SystemExit("--qlora 需要 bitsandbytes；请安装 requirements-sft-accelerated.txt") from exc
+    if args.liger_kernel:
+        try:
+            import liger_kernel  # noqa: F401
+        except ImportError as exc:
+            raise SystemExit("--liger-kernel 需要 liger-kernel；请安装 requirements-sft-accelerated.txt") from exc
 
 
 def _swanlab_config(args):
@@ -165,16 +217,19 @@ def main():
     args = parse_args()
     if args.max_length < 1 or args.epochs <= 0:
         raise SystemExit("--max-length 与 --epochs 必须为正数")
+    _validate_optional_training_dependencies(args)
     (
         torch,
         LoraConfig,
         TaskType,
         get_peft_model,
+        prepare_model_for_kbit_training,
         AutoConfig,
         AutoModelForCausalLM,
         AutoModelForMultimodalLM,
         AutoProcessor,
         AutoTokenizer,
+        BitsAndBytesConfig,
         Trainer,
         TrainerCallback,
         TrainingArguments,
@@ -255,13 +310,18 @@ def main():
     print(f"  Phase 2/3: 加载模型 Qwen/Qwen3.5-2B + LoRA (r={args.lora_r})")
     print(f"{'='*60}")
     model = model_class.from_pretrained(
-        args.model, torch_dtype=dtype, trust_remote_code=True,
-        **({"quantization_config": {"load_in_4bit": True, "bnb_4bit_compute_dtype": dtype, "bnb_4bit_use_double_quant": True, "bnb_4bit_quant_type": "nf4"}} if args.qlora else {})
+        args.model,
+        **_model_load_kwargs(
+            args,
+            dtype=dtype,
+            bits_and_bytes_config=BitsAndBytesConfig,
+        ),
     )
-    if args.gradient_checkpointing:
-        model.config.use_cache = False
-        if hasattr(model, "enable_input_require_grads"):
-            model.enable_input_require_grads()
+    model = _prepare_model_for_training(
+        model,
+        args,
+        prepare_model_for_kbit_training=prepare_model_for_kbit_training,
+    )
     model = get_peft_model(
         model,
         LoraConfig(
@@ -296,6 +356,7 @@ def main():
         warmup_ratio=args.warmup_ratio,
         bf16=args.bf16,
         gradient_checkpointing=args.gradient_checkpointing,
+        use_liger_kernel=args.liger_kernel,
         logging_steps=args.logging_steps,
         save_strategy="epoch",
         save_total_limit=args.save_total_limit,
@@ -334,6 +395,11 @@ def main():
             "project": args.swanlab_project if args.swanlab else None,
             "run_name": run_name,
             "mode": args.swanlab_mode if args.swanlab else None,
+        },
+        "acceleration": {
+            "liger_kernel": args.liger_kernel,
+            "attention_implementation": args.attention_implementation,
+            "qlora": args.qlora,
         },
         "arguments": vars(args),
     }
