@@ -6,7 +6,12 @@ __pycache__/
 .venv/
 venv/
 
-outputs/
+# 仅发布已验收的 SFT 快照；raw、rejected、checkpoint 和临时输出始终不入库。
+outputs/*
+!outputs/flash_accepted_500_parallel/
+outputs/flash_accepted_500_parallel/*
+!outputs/flash_accepted_500_parallel/sft.jsonl
+!outputs/flash_accepted_500_parallel/README.md
 checkpoints/
 models/
 experiments/

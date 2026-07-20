@@ -138,7 +138,7 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
 
 ## LoRA SFT（采集完成后）
 
-训练只使用验收后的 `sft.jsonl`，先按 `task_id` 划分，避免同题轨迹同时出现在训练与验证集。训练实现采用 `Transformers + PEFT`，并根据目标 Qwen 的 `apply_chat_template` 只计算 assistant（包括 tool call）token 的 loss；user、tool observation 不参与 loss。
+训练只使用验收后的 `sft.jsonl`，先按 `task_id` 划分，避免同题轨迹同时出现在训练与验证集。训练实现采用 `Transformers + PEFT`，并根据目标 Qwen 的 `apply_chat_template` 只计算 assistant（包括 tool call）token 的 loss；user、tool observation 不参与 loss。仓库附带当前 380 条已验收的公开训练快照；其边界和校验和见 [outputs/flash_accepted_500_parallel/README.md](outputs/flash_accepted_500_parallel/README.md)。
 
 ```bash
 uv venv .venv-sft --python 3.12
