@@ -80,6 +80,8 @@ PYTHONPATH=src python3 scripts/build_sft_data.py \
 当 accepted 轨迹收集完成后，只训练同目录的 `sft.jsonl`。不要把 raw、rejected、goal、reward_detail 或环境隐藏信息喂给模型。先按 task_id 划分，以防同一个任务的多次尝试泄漏到验证集：
 
 ```bash
+uv venv .venv-sft --python 3.12
+source .venv-sft/bin/activate
 uv pip install -r requirements-sft.txt
 
 PYTHONPATH=src python3 scripts/split_sft_data.py \
@@ -93,8 +95,9 @@ PYTHONPATH=src python3 scripts/split_sft_data.py \
 
 ```bash
 PYTHONPATH=src python3 scripts/inspect_sft_data.py \
-  --model /path/to/Qwen3.5-0.8B \
+  --model Qwen/Qwen3.5-2B \
   --input outputs/flash_accepted_500_parallel/train.jsonl \
+  --max-length 24576 \
   --show-example
 ```
 
@@ -102,9 +105,9 @@ PYTHONPATH=src python3 scripts/inspect_sft_data.py \
 
 ```bash
 PYTHONPATH=src python3 scripts/train_lora_sft.py \
-  --model /path/to/Qwen3.5-0.8B \
+  --model Qwen/Qwen3.5-2B \
   --train outputs/flash_accepted_500_parallel/train.jsonl \
   --validation outputs/flash_accepted_500_parallel/validation.jsonl \
-  --output checkpoints/qwen35-08b-shopping-lora \
+  --output checkpoints/qwen35-2b-shopping-lora \
   --bf16 --gradient-checkpointing
 ```

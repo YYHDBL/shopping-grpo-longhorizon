@@ -9,6 +9,7 @@ from shopping_grpo.sft_training import (
     IGNORE_INDEX,
     build_supervised_example,
     load_supervised_examples,
+    normalize_messages_for_chat_template,
     split_rows_by_task,
 )
 
@@ -50,6 +51,23 @@ class DivergentGenerationPromptTokenizer(CharacterTokenizer):
             messages, tools=tools, tokenize=tokenize, add_generation_prompt=False
         )
         return text + "<assistant>\n" if add_generation_prompt else text
+
+
+class ProcessorTemplate:
+    """模拟 Qwen3.5 的 processor：模板在 processor，分词器在其 tokenizer 属性。"""
+
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+        self.calls = []
+
+    def apply_chat_template(self, messages, tools=None, tokenize=False, add_generation_prompt=False):
+        self.calls.append((messages, tools, tokenize, add_generation_prompt))
+        return self.tokenizer.apply_chat_template(
+            messages,
+            tools=tools,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+        )
 
 
 class SftTrainingTest(unittest.TestCase):
@@ -125,6 +143,54 @@ class SftTrainingTest(unittest.TestCase):
             token for token in example["labels"] if token != IGNORE_INDEX
         )
         self.assertIn("purchase", labeled)
+
+    def test_processor_can_own_chat_template_while_tokenizer_encodes_labels(self):
+        """Qwen3.5 的 processor 模板必须用于渲染，而 labels 仍由底层 tokenizer 编码。"""
+        tokenizer = CharacterTokenizer()
+        processor = ProcessorTemplate(tokenizer)
+        example = build_supervised_example(
+            messages=[
+                {"role": "user", "content": "buy"},
+                {"role": "assistant", "content": "purchase"},
+            ],
+            tools=[],
+            tokenizer=tokenizer,
+            chat_template=processor,
+            max_length=1_000,
+        )
+
+        self.assertIsNotNone(example)
+        self.assertEqual(len(processor.calls), 3)
+
+    def test_openai_tool_call_json_string_is_normalized_for_qwen_template(self):
+        """Qwen3.5 模板要求参数是 mapping，原始 OpenAI messages 的 JSON 字符串不能直接传入。"""
+        messages = [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "search_products",
+                            "arguments": '{"query":"pillow"}',
+                        },
+                    }
+                ],
+            }
+        ]
+
+        normalized = normalize_messages_for_chat_template(messages)
+
+        self.assertEqual(
+            normalized[0]["tool_calls"][0]["function"]["arguments"],
+            {"query": "pillow"},
+        )
+        self.assertEqual(
+            messages[0]["tool_calls"][0]["function"]["arguments"],
+            '{"query":"pillow"}',
+        )
 
     def test_loader_keeps_valid_rows_and_reports_dropped_rows(self):
         """训练前必须看得到 JSONL 中哪些行不能被目标模板训练。"""

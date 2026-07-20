@@ -1,5 +1,8 @@
 # 仅在执行 LoRA SFT 时安装；采集环境不需要这些依赖。
 torch>=2.5
-transformers>=4.51,<5
+# Qwen3.5 官方要求最新 Transformers；安装后以训练环境的 uv.lock 固化实际 commit。
+transformers @ git+https://github.com/huggingface/transformers.git@main
 peft>=0.15,<1
 accelerate>=1,<2
+torchvision
+pillow

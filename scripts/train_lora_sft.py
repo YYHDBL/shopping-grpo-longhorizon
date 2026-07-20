@@ -17,6 +17,12 @@ DEFAULT_TARGET_MODULES = (
     "gate_proj",
     "up_proj",
     "down_proj",
+    # Qwen3.5 的大多数文本层是 Gated DeltaNet，不能遗漏其线性注意力投影。
+    "in_proj_qkv",
+    "in_proj_z",
+    "in_proj_b",
+    "in_proj_a",
+    "out_proj",
 )
 
 
@@ -26,7 +32,8 @@ def parse_args():
     parser.add_argument("--train", type=Path, required=True, help="训练 SFT JSONL")
     parser.add_argument("--validation", type=Path, default=None, help="可选验证 SFT JSONL")
     parser.add_argument("--output", type=Path, required=True, help="LoRA adapter 输出目录")
-    parser.add_argument("--max-length", type=int, default=8192)
+    # 24k 可保留当前真实轨迹的约 93%，48G 显存配合 batch=1 与梯度检查点可稳定训练。
+    parser.add_argument("--max-length", type=int, default=24576)
     parser.add_argument("--epochs", type=float, default=3)
     parser.add_argument("--per-device-train-batch-size", type=int, default=1)
     parser.add_argument("--per-device-eval-batch-size", type=int, default=1)
@@ -50,10 +57,46 @@ def _training_dependencies():
     try:
         import torch
         from peft import LoraConfig, TaskType, get_peft_model
-        from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
+        from transformers import (
+            AutoConfig,
+            AutoModelForCausalLM,
+            AutoModelForMultimodalLM,
+            AutoProcessor,
+            AutoTokenizer,
+            Trainer,
+            TrainingArguments,
+        )
     except ImportError as exc:
         raise SystemExit("缺少训练依赖。请执行：uv pip install -r requirements-sft.txt") from exc
-    return torch, LoraConfig, TaskType, get_peft_model, AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
+    return (
+        torch,
+        LoraConfig,
+        TaskType,
+        get_peft_model,
+        AutoConfig,
+        AutoModelForCausalLM,
+        AutoModelForMultimodalLM,
+        AutoProcessor,
+        AutoTokenizer,
+        Trainer,
+        TrainingArguments,
+    )
+
+
+def _load_preprocessing_components(model_name, auto_config, auto_tokenizer, auto_processor):
+    """按模型配置选择 chat template 的持有者。
+
+    Qwen3.5 是带视觉编码器的条件生成模型，官方模板由 processor 提供；本项目
+    当前数据仅含文本和工具调用，因此 labels 仍用 processor.tokenizer 的 token id。
+    其他纯文本因果模型保持原来的 tokenizer 路径。
+    """
+    config = auto_config.from_pretrained(model_name, trust_remote_code=True)
+    is_multimodal = str(getattr(config, "model_type", "")).startswith("qwen3_5")
+    if is_multimodal:
+        processor = auto_processor.from_pretrained(model_name, trust_remote_code=True)
+        return processor.tokenizer, processor, True
+    tokenizer = auto_tokenizer.from_pretrained(model_name, trust_remote_code=True)
+    return tokenizer, tokenizer, False
 
 
 def _torch_dataset(examples, torch):
@@ -95,19 +138,30 @@ def main():
         LoraConfig,
         TaskType,
         get_peft_model,
+        AutoConfig,
         AutoModelForCausalLM,
+        AutoModelForMultimodalLM,
+        AutoProcessor,
         AutoTokenizer,
         Trainer,
         TrainingArguments,
     ) = _training_dependencies()
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    tokenizer, chat_template, is_multimodal = _load_preprocessing_components(
+        args.model,
+        auto_config=AutoConfig,
+        auto_tokenizer=AutoTokenizer,
+        auto_processor=AutoProcessor,
+    )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
     train_examples, train_stats = load_supervised_examples(
-        args.train, tokenizer=tokenizer, max_length=args.max_length
+        args.train,
+        tokenizer=tokenizer,
+        chat_template=chat_template,
+        max_length=args.max_length,
     )
     print("train_data=", train_stats)
     if not train_examples:
@@ -115,14 +169,18 @@ def main():
     validation_examples = []
     if args.validation:
         validation_examples, validation_stats = load_supervised_examples(
-            args.validation, tokenizer=tokenizer, max_length=args.max_length
+            args.validation,
+            tokenizer=tokenizer,
+            chat_template=chat_template,
+            max_length=args.max_length,
         )
         print("validation_data=", validation_stats)
         if not validation_examples:
             raise SystemExit("验证集没有可用样本；请调整划分或 --max-length")
 
     dtype = torch.bfloat16 if args.bf16 else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(
+    model_class = AutoModelForMultimodalLM if is_multimodal else AutoModelForCausalLM
+    model = model_class.from_pretrained(
         args.model, torch_dtype=dtype, trust_remote_code=True
     )
     if args.gradient_checkpointing:
@@ -170,7 +228,7 @@ def main():
     )
     result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model(str(args.output))
-    tokenizer.save_pretrained(str(args.output))
+    chat_template.save_pretrained(str(args.output))
     (args.output / "train_summary.json").write_text(
         json.dumps(
             {

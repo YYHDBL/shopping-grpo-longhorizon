@@ -10,7 +10,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="预检 SFT JSONL 的 chat-template 与 loss mask")
     parser.add_argument("--model", required=True, help="Hugging Face 模型名或本地模型目录")
     parser.add_argument("--input", required=True, help="待训练的 JSONL")
-    parser.add_argument("--max-length", type=int, default=8192)
+    parser.add_argument("--max-length", type=int, default=24576)
     parser.add_argument("--show-example", action="store_true", help="打印第一条样本的标签片段")
     return parser.parse_args()
 
@@ -18,13 +18,18 @@ def parse_args():
 def main():
     args = parse_args()
     try:
-        from transformers import AutoTokenizer
+        from transformers import AutoProcessor
     except ImportError as exc:
         raise SystemExit("缺少训练依赖。请执行：uv pip install -r requirements-sft.txt") from exc
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    # Qwen3.5 的 chat template 属于 processor；文本工具轨迹仍只会产生 token ids。
+    processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=True)
+    tokenizer = processor.tokenizer
     examples, stats = load_supervised_examples(
-        args.input, tokenizer=tokenizer, max_length=args.max_length
+        args.input,
+        tokenizer=tokenizer,
+        chat_template=processor,
+        max_length=args.max_length,
     )
     print(stats)
     if not examples:

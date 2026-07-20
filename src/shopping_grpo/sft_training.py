@@ -7,6 +7,7 @@
 
 import json
 import hashlib
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -28,22 +29,52 @@ def _common_prefix_length(left, right):
     return length
 
 
-def build_supervised_example(messages, tools, tokenizer, max_length=8192):
+def normalize_messages_for_chat_template(messages):
+    """将 OpenAI 风格 tool-call 参数转成 Qwen3.5 模板可渲染的 mapping。
+
+    原始 JSONL 保持 OpenAI 标准：``function.arguments`` 是 JSON 字符串。Qwen3.5
+    的官方 template 则会遍历 arguments 的键值对，因此只在训练前复制并转换；
+    无法解析为 object 的调用应被上层作为不可训练样本丢弃。
+    """
+    normalized = deepcopy(messages)
+    for message in normalized:
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") or {}
+            arguments = function.get("arguments")
+            if not isinstance(arguments, str):
+                continue
+            try:
+                parsed = json.loads(arguments)
+            except json.JSONDecodeError:
+                return None
+            if not isinstance(parsed, dict):
+                return None
+            function["arguments"] = parsed
+    return normalized
+
+
+def build_supervised_example(messages, tools, tokenizer, max_length=8192, chat_template=None):
     """渲染一条轨迹，并只保留 assistant 回合对应的训练标签。
 
     每个 assistant 回合分别渲染「此前消息 + generation prompt」与「包含该回合的
     消息」，两者的 token 差即为该回合的可训练部分，其中自然包含 tool call。
     任何超长或模板边界不一致样本都会丢弃，不做可能截断工具调用的截断。
     """
+    template = chat_template or tokenizer
+    rendered_messages = normalize_messages_for_chat_template(messages)
+    if rendered_messages is None:
+        return None
     assistant_indices = [
-        index for index, message in enumerate(messages) if message.get("role") == "assistant"
+        index
+        for index, message in enumerate(rendered_messages)
+        if message.get("role") == "assistant"
     ]
     if not assistant_indices:
         return None
 
     try:
-        full_text = tokenizer.apply_chat_template(
-            messages,
+        full_text = template.apply_chat_template(
+            rendered_messages,
             tools=tools,
             tokenize=False,
             add_generation_prompt=False,
@@ -57,14 +88,14 @@ def build_supervised_example(messages, tools, tokenizer, max_length=8192):
     labels = [IGNORE_INDEX] * len(input_ids)
     for index in assistant_indices:
         try:
-            prefix_text = tokenizer.apply_chat_template(
-                messages[:index],
+            prefix_text = template.apply_chat_template(
+                rendered_messages[:index],
                 tools=tools,
                 tokenize=False,
                 add_generation_prompt=True,
             )
-            through_assistant_text = tokenizer.apply_chat_template(
-                messages[: index + 1],
+            through_assistant_text = template.apply_chat_template(
+                rendered_messages[: index + 1],
                 tools=tools,
                 tokenize=False,
                 add_generation_prompt=False,
@@ -93,7 +124,7 @@ def build_supervised_example(messages, tools, tokenizer, max_length=8192):
     }
 
 
-def load_supervised_examples(path, tokenizer, max_length=8192):
+def load_supervised_examples(path, tokenizer, max_length=8192, chat_template=None):
     """读取本仓库生成的 SFT JSONL，并报告被模板拒绝的样本数。"""
     examples = []
     stats = {"total": 0, "kept": 0, "dropped": 0}
@@ -109,6 +140,7 @@ def load_supervised_examples(path, tokenizer, max_length=8192):
                     tools=row.get("tools") or [],
                     tokenizer=tokenizer,
                     max_length=max_length,
+                    chat_template=chat_template,
                 )
             except (KeyError, TypeError, json.JSONDecodeError):
                 example = None
