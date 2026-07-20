@@ -21,13 +21,19 @@ ShopSimulator -> Teacher rollout -> 规则验收 -> OpenAI tool-calling SFT JSON
 
 ## 配置
 
-项目只依赖 Python 标准库。ShopSimulator 需要作为相邻仓库单独启动。
+项目仅额外使用 `tqdm` 显示采集进度条；ShopSimulator 需要作为相邻仓库单独启动。
 
 ```bash
 cp .env.example .env
 set -a
 . ./.env
 set +a
+```
+
+首次运行还需安装进度条依赖：
+
+```bash
+python3 -m pip install -r requirements.txt
 ```
 
 `.env` 不会被 Python 自动读取；上述命令将它导出到当前 shell。不要提交 `.env`。
@@ -65,27 +71,27 @@ PYTHONPATH=src python3 scripts/smoke_shop_env.py \
 
 1、10、100 个任务分别只需更换 `--limit`。以下命令的 `--limit` 限制任务数，不保证同样数量的 accepted 轨迹。
 
-使用 DeepSeek V4 Flash 思考模式时，显式指定模型和开关。rollout 会在 raw 中保留并回传 `reasoning_content` 以支持 tool calling；构造 SFT JSONL 时会自动移除该字段。
+使用 DeepSeek V4 Flash 思考模式时，显式指定模型和开关。rollout 会在 raw 中保留并回传 `reasoning_content` 以支持 tool calling；构造 SFT JSONL 时会将可保留的推理转写进标准 assistant `content` 的 `<think>` 标签，不保留 provider 专有字段。
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/thinking/raw.jsonl \
   --base-url "$SHOPSIM_BASE_URL" --model deepseek-v4-flash \
-  --thinking --reasoning-effort high --limit 10 --max-steps 30
+  --thinking --reasoning-effort high --limit 10 --max-steps 35
 ```
 
 ```bash
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/one/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 30
+  --base-url "$SHOPSIM_BASE_URL" --limit 1 --attempts-per-task 1 --max-steps 35
 
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/ten/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 30
+  --base-url "$SHOPSIM_BASE_URL" --limit 10 --attempts-per-task 1 --max-steps 35
 
 PYTHONPATH=src python3 scripts/collect_teacher_rollouts.py \
   --tasks data/shop_tasks.jsonl --output outputs/hundred/raw.jsonl \
-  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 30
+  --base-url "$SHOPSIM_BASE_URL" --limit 100 --attempts-per-task 1 --max-steps 35
 ```
 
 将任一 raw JSONL 构造成 accepted、rejected、统计和标准 OpenAI messages JSONL：
@@ -99,7 +105,68 @@ PYTHONPATH=src python3 scripts/build_sft_data.py \
   --sft outputs/hundred/sft_openai_messages.jsonl
 ```
 
+推荐使用批次脚本采集并自动重建上述四类文件。相同 `--output-dir` 可直接断点续跑；
+默认采集前 100 个任务、每条最多 35 步。下面是当前 DeepSeek V4 Pro 思考模式的 100 条命令：
+
+```bash
+PYTHONPATH=src python3 scripts/collect_sft_batch.py \
+  --tasks data/shop_tasks.jsonl \
+  --output-dir outputs/collection_100 \
+  --base-url "$SHOPSIM_BASE_URL" \
+  --model deepseek-v4-pro \
+  --thinking --reasoning-effort max
+```
+
+若目标是收集固定数量的 accepted 轨迹，使用 `--target-accepted`。`--limit` 此时表示最多尝试的任务数；达到目标后立即停止。例如使用 Flash 至多尝试前 1000 个任务，收集 500 条 accepted：
+
+运行时会显示“已扫描任务数 / 候选上限”和 `accepted=当前/目标`；中断后用完全相同的命令续跑即可。
+
+`--workers` 可并发采集多条轨迹，但必须先把 ShopSimulator 启动为至少同样数量的环境；建议从 `--workers 4` 开始。每条轨迹仍独占一个环境，raw JSONL 由主线程顺序写入。
+
+```bash
+PYTHONPATH=src python3 scripts/collect_sft_batch.py \
+  --tasks data/shop_tasks.jsonl \
+  --output-dir outputs/flash_accepted_500 \
+  --limit 1000 --target-accepted 500 \
+  --workers 4 \
+  --base-url "$SHOPSIM_BASE_URL" \
+  --model deepseek-v4-flash \
+  --thinking --reasoning-effort max
+```
+
 完整的 6000 accepted 续跑和验收说明见 [docs/runbook.md](docs/runbook.md)。
+
+## LoRA SFT（采集完成后）
+
+训练只使用验收后的 `sft.jsonl`，先按 `task_id` 划分，避免同题轨迹同时出现在训练与验证集。训练实现采用 `Transformers + PEFT`，并根据目标 Qwen 的 `apply_chat_template` 只计算 assistant（包括 tool call）token 的 loss；user、tool observation 不参与 loss。
+
+```bash
+uv venv .venv-sft --python 3.12
+source .venv-sft/bin/activate
+uv pip install -r requirements-sft.txt
+
+PYTHONPATH=src python3 scripts/split_sft_data.py \
+  --input outputs/flash_accepted_500_parallel/sft.jsonl \
+  --train outputs/flash_accepted_500_parallel/train.jsonl \
+  --validation outputs/flash_accepted_500_parallel/validation.jsonl
+
+PYTHONPATH=src python3 scripts/inspect_sft_data.py \
+  --model Qwen/Qwen3.5-2B \
+  --input outputs/flash_accepted_500_parallel/train.jsonl \
+  --max-length 24576 \
+  --show-example
+```
+
+预检通过后再训练。下例使用 bf16 和梯度检查点；模型或 GPU 不支持 bf16 时去掉 `--bf16`。
+
+```bash
+PYTHONPATH=src python3 scripts/train_lora_sft.py \
+  --model Qwen/Qwen3.5-2B \
+  --train outputs/flash_accepted_500_parallel/train.jsonl \
+  --validation outputs/flash_accepted_500_parallel/validation.jsonl \
+  --output checkpoints/qwen35-2b-shopping-lora \
+  --bf16 --gradient-checkpointing
+```
 
 ## 验证
 

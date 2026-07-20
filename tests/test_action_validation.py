@@ -17,17 +17,21 @@ class ActionValidationTest(unittest.TestCase):
 
         self.assertIsNone(action_reject_reason("select_option", {"value": "糖果粉"}, observation))
 
-    def test_post_selection_rejects_navigation_even_when_current_page_shows_button(self):
+    def test_post_selection_allows_current_page_navigation(self):
+        """规格选择不改变环境的可用动作；只校验当前页面是否真的有按钮。"""
         observation = '商品页\n\n可点击的按钮: ["Description", "Buy Now"]'
 
-        reason = action_reject_reason(
-            "view_description",
-            {},
-            observation,
-            selection_started=True,
-        )
+        reason = action_reject_reason("view_description", {}, observation)
 
-        self.assertEqual(reason, "action_not_allowed_after_option_selection")
+        self.assertIsNone(reason)
+
+    def test_rejects_schema_extra_argument_before_executing_tool(self):
+        """无参数工具携带垃圾字段时，不能静默丢弃字段后继续执行。"""
+        observation = '商品页\n\n可点击的按钮: ["Buy Now"]'
+
+        reason = action_reject_reason("buy_now", {"string": "true"}, observation)
+
+        self.assertEqual(reason, "schema_extra_arguments:string")
 
 
 if __name__ == "__main__":

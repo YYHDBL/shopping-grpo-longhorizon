@@ -23,7 +23,12 @@ def parse_args():
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--timeout", type=int, default=180)
-    parser.add_argument("--max-steps", type=int, default=30)
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=35,
+        help="单条轨迹最多执行的工具步数；默认 35，仍可按实验显式覆盖。",
+    )
     parser.add_argument("--thinking", action="store_true", help="开启 DeepSeek thinking mode")
     parser.add_argument("--reasoning-effort", choices=("high", "max"), default="high")
     parser.add_argument("--attempts-per-task", type=int, default=1)

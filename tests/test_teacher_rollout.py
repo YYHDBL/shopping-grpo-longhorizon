@@ -152,11 +152,16 @@ class TeacherRolloutTest(unittest.TestCase):
         self.assertIn("Buy Now 是否出现在最新 observation", SYSTEM_PROMPT)
         self.assertIn("返回商品详情页", SYSTEM_PROMPT)
         self.assertIn("不要在购买前输出最终答复", SYSTEM_PROMPT)
-        self.assertIn("开始选择规格后", SYSTEM_PROMPT)
+        self.assertIn("选中规格后才显示", SYSTEM_PROMPT)
         self.assertIn("同一规格组只能选择一个值", SYSTEM_PROMPT)
+        self.assertIn("选中规格即结束探索阶段", SYSTEM_PROMPT)
+        self.assertIn("不得查看子页、返回搜索、再次搜索或打开其他商品", SYSTEM_PROMPT)
+        self.assertIn("不得把它用于试价格或比较候选", SYSTEM_PROMPT)
+        self.assertIn("明确预算已冲突时，绝不为了完成任务而购买", SYSTEM_PROMPT)
         self.assertIn("只有按钮实际出现才可调用", SYSTEM_PROMPT)
         self.assertIn("用户硬约束", SYSTEM_PROMPT)
         self.assertIn("任一硬约束未在当前页面证实，不得购买", SYSTEM_PROMPT)
+        self.assertIn("选择前检查点", SYSTEM_PROMPT)
 
     def test_guard_gives_a_return_only_instruction_on_information_subpage(self):
         """子页误操作后，守卫应明确引导模型先返回，不重复猜测按钮。"""
@@ -233,8 +238,8 @@ class TeacherRolloutTest(unittest.TestCase):
             )
         )
 
-    def test_collect_for_task_blocks_navigation_after_option_selection(self):
-        """选择规格后，即使页面仍显示详情按钮，也只能继续选规格或购买。"""
+    def test_collect_for_task_allows_current_page_navigation_after_option_selection(self):
+        """选择规格后仍由环境当前页面决定能否浏览，采集器不另造状态机。"""
         class OptionEnv(FakeEnv):
             def step(self, action):
                 self.actions.append(action)
@@ -249,6 +254,12 @@ class TeacherRolloutTest(unittest.TestCase):
                 if action == "click[满天星]":
                     return {
                         "instruction": 'selected\n\n可点击的按钮: ["Description", "Buy Now"]',
+                        "reward": 0.0,
+                        "done": False,
+                    }
+                if action == "click[Description]":
+                    return {
+                        "instruction": 'details\n\n可点击的按钮: ["Buy Now"]',
                         "reward": 0.0,
                         "done": False,
                     }
@@ -281,9 +292,60 @@ class TeacherRolloutTest(unittest.TestCase):
             "search[乳胶枕]",
             "click[100000000001]",
             "click[满天星]",
+            "click[Description]",
             "click[Buy Now]",
         ])
-        self.assertEqual(traj["blocked_tool_calls"][0]["reason"], "action_not_allowed_after_option_selection")
+        self.assertEqual(traj["blocked_tool_calls"], [])
+
+    def test_collect_for_task_keeps_one_tool_schema_after_option_selection(self):
+        """所有阶段使用同一工具 schema，环境 observation 是唯一动作边界。"""
+        class OptionEnv(FakeEnv):
+            def step(self, action):
+                self.actions.append(action)
+                if action == "search[乳胶枕]":
+                    return {"instruction": "results [SEP] 100000000001", "reward": 0.0, "done": False}
+                if action == "click[100000000001]":
+                    return {
+                        "instruction": 'detail\n\n可点击的按钮: ["满天星", "Buy Now"]',
+                        "reward": 0.0,
+                        "done": False,
+                    }
+                if action == "click[满天星]":
+                    return {
+                        "instruction": 'selected\n\n可点击的按钮: ["Buy Now"]',
+                        "reward": 0.0,
+                        "done": False,
+                    }
+                if action == "click[Buy Now]":
+                    return {
+                        "instruction": "done",
+                        "reward": 1.0,
+                        "done": True,
+                        "over": True,
+                        "purchase": {"asin": "A1"},
+                        "reward_detail": {"r_type": 1, "r_att": 1, "r_option": 1, "r_price": 1},
+                    }
+                raise AssertionError(action)
+
+        client = MockClient(
+            [
+                assistant_tool("search_products", {"query": "乳胶枕"}, "call_search"),
+                assistant_tool("open_product", {"asin": "100000000001"}, "call_open"),
+                assistant_tool("select_option", {"value": "满天星"}, "call_option"),
+                assistant_tool("buy_now", {}, "call_buy"),
+            ]
+        )
+
+        trajectory = collect_for_task(
+            {"task_id": 13}, client=client, env_factory=OptionEnv, base_url="http://shop.test"
+        )
+
+        self.assertEqual(trajectory["status"], "done")
+        exposed_after_selection = [
+            schema["function"]["name"] for schema in client.requests[3]["tools"]
+        ]
+        self.assertIn("view_description", exposed_after_selection)
+        self.assertIn("search_products", exposed_after_selection)
 
     def test_collect_for_task_allows_recovery_after_separated_guard_rejections(self):
         """合法动作应重置守卫计数，避免累计三次历史点击提前中止。"""

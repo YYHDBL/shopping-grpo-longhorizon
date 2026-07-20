@@ -179,7 +179,18 @@ class SftDataTest(unittest.TestCase):
         accepted, reasons = acceptance_reasons(traj)
 
         self.assertFalse(accepted)
-        self.assertIn("step_3.action_not_allowed_after_option_selection", reasons)
+        self.assertIn("step_3.action_after_option_selection", reasons)
+
+    def test_acceptance_reasons_rejects_schema_extra_arguments(self):
+        traj = accepted_trajectory()
+        traj["steps"][3]["tool_call"]["function"]["arguments"] = json.dumps(
+            {"string": "true"}
+        )
+
+        accepted, reasons = acceptance_reasons(traj)
+
+        self.assertFalse(accepted)
+        self.assertIn("step_3.schema_extra_arguments:string", reasons)
 
     def test_acceptance_reasons_ignores_runtime_guard_when_finding_previous_observation(self):
         traj = accepted_trajectory()
@@ -215,6 +226,9 @@ class SftDataTest(unittest.TestCase):
                 "runtime_action_guard": True,
             },
         ]
+        # Guard 后的下一轮推理会复述本地规则，不能进入训练数据；
+        # 但它携带的合法工具调用仍必须保留以维持 message/tool 配对。
+        traj["messages"][6]["reasoning_content"] = "guard_only_reasoning"
         traj["blocked_tool_calls"] = [{"tool_call": invalid["tool_calls"][0]}]
         traj["messages"][-1]["content"] = "Purchased. Target. Goal. Reward: 1.0. Reward Details."
 
@@ -227,6 +241,7 @@ class SftDataTest(unittest.TestCase):
         self.assertNotIn('"goal"', payload)
         self.assertNotIn('"purchase"', payload)
         self.assertIn("<think>这是 Teacher 的内部推理，只用于 rollout 连贯性。</think>", payload)
+        self.assertNotIn("guard_only_reasoning", payload)
         self.assertNotIn("reasoning_content", payload)
         self.assertNotIn("未执行", payload)
         self.assertEqual(row["messages"][-1]["content"], "购买已完成。")

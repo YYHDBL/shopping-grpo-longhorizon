@@ -3,7 +3,7 @@
 import json
 import re
 
-from shopping_grpo.shop_tools import tool_call_to_action
+from shopping_grpo.shop_tools import SHOP_TOOL_SCHEMAS, tool_call_to_action
 
 
 RUNTIME_GUARD_FIELD = "runtime_action_guard"
@@ -17,12 +17,17 @@ NAVIGATION_BUTTONS = {
     "back to search",
     "buy now",
 }
+TOOL_ARGUMENT_NAMES = {
+    tool["function"]["name"]: set(tool["function"]["parameters"].get("properties", {}))
+    for tool in SHOP_TOOL_SCHEMAS
+}
 
 
-def action_reject_reason(name, arguments, observation, selection_started=False):
+def action_reject_reason(name, arguments, observation):
     """返回动作拒绝原因；None 表示允许执行。"""
-    if selection_started and name not in {"select_option", "buy_now", "think"}:
-        return "action_not_allowed_after_option_selection"
+    extra_argument_names = _schema_extra_argument_names(name, arguments)
+    if extra_argument_names:
+        return "schema_extra_arguments:" + ",".join(extra_argument_names)
     if name == "think":
         return None
     if name == "search_products":
@@ -49,6 +54,14 @@ def action_reject_reason(name, arguments, observation, selection_started=False):
     if target not in {button.casefold() for button in clickable_buttons(observation)}:
         return "click_not_in_previous_observation"
     return None
+
+
+def _schema_extra_argument_names(name, arguments):
+    """只拒绝 schema 未声明字段；缺少必填字段仍由工具动作转换报错。"""
+    allowed_names = TOOL_ARGUMENT_NAMES.get(name)
+    if allowed_names is None or not isinstance(arguments, dict):
+        return []
+    return sorted(set(arguments) - allowed_names)
 
 
 def action_guard_tool_message(tool_call, reason, observation):
