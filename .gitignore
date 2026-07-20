@@ -16,5 +16,8 @@ outputs/flash_accepted_500_parallel/raw.jsonl
 checkpoints/
 models/
 experiments/
+# `experiments/` 忽略的是训练产物；项目实验记录属于文档，需要随代码同步。
+!docs/experiments/
+!docs/experiments/**
 
 docs/references/papers/*.pdf
