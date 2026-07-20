@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument("--target-modules", nargs="+", default=DEFAULT_TARGET_MODULES)
     parser.add_argument("--bf16", action="store_true", help="使用 bf16；支持的 CUDA GPU 建议开启")
+    parser.add_argument("--qlora", action="store_true", help="4-bit 量化加载基座模型，大幅降低显存")
     parser.add_argument("--gradient-checkpointing", action="store_true")
     parser.add_argument("--logging-steps", type=int, default=5)
     parser.add_argument("--save-total-limit", type=int, default=2)
@@ -110,9 +111,6 @@ def _swanlab_config(args):
         f"lora-r{args.lora_r}-bs{args.per_device_train_batch_size}"
         f"x{args.gradient_accumulation_steps}-lr{args.learning_rate}"
     )
-    os.environ["SWANLAB_PROJECT"] = args.swanlab_project
-    os.environ["SWANLAB_MODE"] = args.swanlab_mode
-    os.environ["SWANLAB_LOGDIR"] = str(args.output / "swanlab")
     return "swanlab", run_name
 
 
@@ -257,7 +255,8 @@ def main():
     print(f"  Phase 2/3: 加载模型 Qwen/Qwen3.5-2B + LoRA (r={args.lora_r})")
     print(f"{'='*60}")
     model = model_class.from_pretrained(
-        args.model, torch_dtype=dtype, trust_remote_code=True
+        args.model, torch_dtype=dtype, trust_remote_code=True,
+        **({"quantization_config": {"load_in_4bit": True, "bnb_4bit_compute_dtype": dtype, "bnb_4bit_use_double_quant": True, "bnb_4bit_quant_type": "nf4"}} if args.qlora else {})
     )
     if args.gradient_checkpointing:
         model.config.use_cache = False
@@ -279,10 +278,14 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     report_to, run_name = _swanlab_config(args)
     if report_to == "swanlab":
-        print(
-            f"[SwanLab] mode={args.swanlab_mode} project={args.swanlab_project} "
-            f"run={run_name} logs={args.output / 'swanlab'}"
+        import swanlab
+        swanlab.init(
+            project=args.swanlab_project,
+            name=run_name,
+            mode=args.swanlab_mode,
+            logdir=str(args.output / "swanlab"),
         )
+        print(f"[SwanLab] project={args.swanlab_project} run={run_name}")
     training_args = TrainingArguments(
         output_dir=str(args.output),
         num_train_epochs=args.epochs,
