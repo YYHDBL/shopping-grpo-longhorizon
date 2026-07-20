@@ -75,6 +75,27 @@ PYTHONPATH=src python3 scripts/build_sft_data.py \
 
 每个采样配置使用独立输出目录，以便追溯模型、温度、任务来源和重试策略，无需额外采集框架。
 
+## 固定 benchmark：Base、SFT 与 GRPO 的统一评测
+
+先启动 ShopSimulator 结构化服务；评测器只通过 `/api/shop_agent` 操作环境，不读取 HTML reward。仓库中的 `data/benchmarks/shop_benchmark_v1.jsonl` 是 200 条固定 held-out task，和当前 SFT 的 380 条 task 无重叠。不得用这 200 条 task 继续采集训练轨迹。
+
+所有对比实验必须保持下列设置不变：task 清单、工具 schema、system prompt、temperature=0、max_steps=35、每 task 一次 rollout。严格成功率以全部 200 条 task 为分母，要求购买后环境确认结束，且 `r_type`、`r_att`、`r_option`、`r_price` 均为 1。
+
+启动 GPU 模型服务后，Base、SFT adapter 和 GRPO checkpoint 分别仅替换 `--model`、`--llm-base-url` 与输出目录，运行相同命令：
+
+```bash
+PYTHONPATH=src python3 scripts/evaluate_shop_benchmark.py \
+  --benchmark data/benchmarks/shop_benchmark_v1.jsonl \
+  --output outputs/eval/base_qwen35_2b/raw.jsonl \
+  --summary outputs/eval/base_qwen35_2b/summary.json \
+  --base-url http://127.0.0.1:5700 \
+  --model Qwen/Qwen3.5-2B \
+  --llm-base-url http://127.0.0.1:8000/v1 \
+  --api-key EMPTY
+```
+
+`raw.jsonl` 支持断点续跑；`summary.json` 记录严格成功率、四项分量、平均步数、状态和动作守卫原因。先保存 Base 结果，再进行 SFT 与 GRPO，避免事后改变评测协议。
+
 ## LoRA SFT 冷启动
 
 当 accepted 轨迹收集完成后，只训练同目录的 `sft.jsonl`。不要把 raw、rejected、goal、reward_detail 或环境隐藏信息喂给模型。先按 task_id 划分，以防同一个任务的多次尝试泄漏到验证集：

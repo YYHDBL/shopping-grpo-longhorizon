@@ -1,0 +1,12 @@
+{
+  "benchmark_version": "shop_benchmark_v1",
+  "task_count": 200,
+  "seed": 20260720,
+  "source_task_count": 23421,
+  "excluded_sft_task_count": 380,
+  "protocol": {
+    "max_steps": 35,
+    "temperature": 0.0,
+    "attempts_per_task": 1
+  }
+}

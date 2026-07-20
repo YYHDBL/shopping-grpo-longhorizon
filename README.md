@@ -14,8 +14,9 @@ ShopSimulator -> Teacher rollout -> 规则验收 -> OpenAI tool-calling SFT JSON
 - `src/shopping_grpo/shop_tools.py`：Teacher rollout 与未来训练共用的 OpenAI tool schema。
 - `src/shopping_grpo/teacher_rollout.py`：OpenAI-compatible Teacher rollout 和断点续跑。
 - `src/shopping_grpo/sft_data.py`：确定性验收和 SFT JSONL 构造。
-- `scripts/`：环境 smoke、task_id 导出、采集和数据构造入口。
+- `scripts/`：环境 smoke、task_id 导出、采集、benchmark 与训练入口。
 - `data/tasks.example.jsonl`：无隐藏信息的最小任务清单示例。
+- `data/benchmarks/`：固定 held-out ShopSimulator benchmark，禁止用于训练采集。
 - `docs/data_contract.md`：四类输出文件的字段约定。
 - `docs/runbook.md`：端到端运行和 6000 accepted 采集方式。
 
@@ -135,6 +136,34 @@ PYTHONPATH=src python3 scripts/collect_sft_batch.py \
 ```
 
 完整的 6000 accepted 续跑和验收说明见 [docs/runbook.md](docs/runbook.md)。
+
+## 固定 benchmark 与 Base / SFT / GRPO 对比
+
+仓库附带 `benchmark_v1`：200 个与当前 SFT 数据严格隔离的单轮 task。其指标口径和校验和见 [data/benchmarks/README.md](data/benchmarks/README.md)。Base、SFT、GRPO 必须使用完全相同的 task、工具 schema、temperature=0 与 max_steps=35。
+
+若当前 SFT 快照更新，需要重新创建**新版本** benchmark；不要改写 v1：
+
+```bash
+PYTHONPATH=src python3 scripts/create_shop_benchmark.py \
+  --tasks data/shop_tasks.jsonl \
+  --sft outputs/flash_accepted_500_parallel/sft.jsonl \
+  --output data/benchmarks/shop_benchmark_v2.jsonl \
+  --metadata data/benchmarks/shop_benchmark_v2.metadata.json \
+  --size 200 --seed 20260720
+```
+
+GPU 上启动模型的 OpenAI-compatible 服务后，运行下列命令评测。输出 raw 不进入 Git；汇总 JSON 是可比较的实验结果。
+
+```bash
+PYTHONPATH=src python3 scripts/evaluate_shop_benchmark.py \
+  --benchmark data/benchmarks/shop_benchmark_v1.jsonl \
+  --output outputs/eval/base_qwen35_2b/raw.jsonl \
+  --summary outputs/eval/base_qwen35_2b/summary.json \
+  --base-url http://127.0.0.1:5700 \
+  --model Qwen/Qwen3.5-2B \
+  --llm-base-url http://127.0.0.1:8000/v1 \
+  --api-key EMPTY
+```
 
 ## LoRA SFT（采集完成后）
 
