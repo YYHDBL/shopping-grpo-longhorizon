@@ -1,0 +1,13 @@
+{
+  "interaction": [
+    {
+      "name": "shopsimulator",
+      "class_name": "shopping_grpo.verl_adapter.interaction.ShopSimulatorInteraction",
+      "config": {
+        "base_url": "http://127.0.0.1:5700",
+        "timeout": 60,
+        "max_steps": 35
+      }
+    }
+  ]
+}

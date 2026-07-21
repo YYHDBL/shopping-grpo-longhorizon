@@ -9,14 +9,15 @@
 | 00 | [单轮轨迹采集与确定性验收](00-data-collection-2026-07-20.md) | 已完成快照 | 757 条 raw → 380 条 accepted |
 | 01 | [Qwen3.5-2B Instruct 零样本基线](01-qwen35-2b-instruct-baseline-2026-07-20.md) | 已完成首轮 | 200 条完成；严格成功率 0%，原始产物待服务器同步 |
 | 02 | [LoRA SFT v1：首轮冷启动](02-sft-v1-pitfalls-2026-07-20.md) | 已完成首轮 | 12K Full-CoT SFT 首次达到约 5% 严格成功率，同时暴露长上下文 OOM 与长轨迹问题 |
-| 03 | [SFT v2：显存实验与 Action-only 决策](03-sft-v2-memory-and-action-only-2026-07-20.md) | 待运行 | A/B/C/D 显存 smoke；正式 SFT 改为不训练 Teacher thinking |
+| 03 | [SFT v2：显存实验与 Action-only 决策](03-sft-v2-memory-and-action-only-2026-07-20.md) | 已完成 | Liger + SDPA + Action-only；benchmark v2_50 严格成功率 12% |
+| 04 | [Vanilla GRPO v1：任务冻结与 veRL 接入准备](04-vanilla-grpo-v1-preparation-2026-07-21.md) | 准备完成 | 50 条评测、2,000 条 probe 候选池、veRL 最小适配层与 SFT 合并入口 |
 
 ## 尚未启动：先放模板，禁止预填结果
 
 | 编号 | 模板 | 什么时候使用 |
 |---|---|---|
 | 02 | [SFT 实验记录模板](sft-experiment-template.md) | 每次 LoRA SFT run、数据版本或超参数变动后 |
-| 03 | [Vanilla GRPO 实验记录模板](grpo-experiment-template.md) | SFT 基线确认后，首次 GRPO 与每个后续消融 |
+| 04 | [Vanilla GRPO 实验记录模板](grpo-experiment-template.md) | 首次 GRPO 与每个后续消融 |
 
 ## 记录规则
 

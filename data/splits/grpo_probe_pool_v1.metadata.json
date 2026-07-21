@@ -1,0 +1,18 @@
+{
+  "split_version": "grpo_probe_pool_v1",
+  "purpose": "probe SFT policy rollout lengths before GRPO stratification",
+  "task_count": 2000,
+  "seed": 20260721,
+  "source_tasks": "data/shop_tasks.jsonl",
+  "source_tasks_sha256": "35a5978bba829a6b4196f0e4ce65d5f7d366cc0704469e3b7f8a6d02f50a9dea",
+  "excluded_raw_rollouts": "outputs/flash_accepted_500_parallel/raw.jsonl.gz",
+  "excluded_raw_rollouts_sha256": "91a0b488dbd7d7c1baf9d3f53460131bed8489e7f3cf7a1cda2c4d330772aed0",
+  "excluded_raw_rollout_task_count": 757,
+  "extra_excluded_sft": null,
+  "extra_excluded_sft_sha256": null,
+  "extra_excluded_sft_task_count": 0,
+  "excluded_benchmark": "data/benchmarks/shop_benchmark_v2_50.jsonl",
+  "excluded_benchmark_sha256": "67db75b636bfc15d28ca99df6250db66778e567d53b8205b5f2cbc4955f70328",
+  "excluded_benchmark_task_count": 50,
+  "selection": "deterministic_random_without_replacement"
+}

@@ -6,7 +6,7 @@ ShopSimulator 单轮购物任务的 SFT 数据准备链路：
 ShopSimulator -> Teacher rollout -> 规则验收 -> OpenAI tool-calling SFT JSONL
 ```
 
-当前仓库只负责收集和构造 SFT-ready 数据。不包含 LoRA SFT、GRPO、PPO、Reward Model、LLM Grader 或额外 Agent 框架。
+当前仓库已包含 LoRA SFT 与 **Vanilla GRPO 的数据/环境最小适配准备**；尚未在仓库内固定 GRPO 超参数或启动正式 RL 训练。仍不包含 PPO、Reward Model、LLM Grader 或额外 Agent 框架。
 
 ## 目录
 

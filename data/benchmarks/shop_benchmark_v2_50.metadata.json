@@ -1,0 +1,14 @@
+{
+  "parent_benchmark": "shop_benchmark_v1",
+  "parent_sha256": "9905ab9f4b8d9bbbc44adfd8cc4de2bce2797a63366dc94950015a5eed86655b",
+  "parent_task_count": 200,
+  "task_count": 50,
+  "selection": "ordered_prefix",
+  "benchmark_version": "shop_benchmark_v2_50",
+  "protocol": {
+    "max_steps": 35,
+    "temperature": 0.0,
+    "attempts_per_task": 1,
+    "max_tokens": 512
+  }
+}
