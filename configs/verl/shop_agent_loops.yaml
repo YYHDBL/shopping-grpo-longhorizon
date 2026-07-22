@@ -1,0 +1,2 @@
+- name: shopping_tool_agent
+  _target_: shopping_grpo.verl_adapter.agent_loop.ShoppingToolAgentLoop

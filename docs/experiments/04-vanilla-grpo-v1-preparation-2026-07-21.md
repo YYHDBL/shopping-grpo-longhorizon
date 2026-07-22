@@ -1,6 +1,6 @@
 # Vanilla GRPO v1：任务冻结与 veRL 接入准备
 
-> 状态：准备完成，尚未在 GPU 上启动训练。本文只固定不会因超参数而变化的实验资产；group size、并发、学习率与 KL 系数留给服务器 smoke test 决定。
+> 状态：代码、Vanilla 配置和启动入口已完成，尚未在 GPU 上启动训练。默认 group size、并发、学习率与 KL 已固定；服务器 smoke 只验证可运行性，不事后改写本基线记录。
 
 ## 目标
 
@@ -38,7 +38,7 @@ PYTHONPATH=src python3 scripts/merge_lora_adapter.py \
 1. `Interaction.start_interaction` 对每条 rollout 调 `reset(task_id)`，取得独占 HTTP 环境；
 2. `Tool` 复用仓库唯一的 `SHOP_TOOL_SCHEMAS`、`tool_call_to_action` 和动作守卫；
 3. `calculate_score` 只返回环境原生终局 reward；
-4. `finalize_interaction` 无条件 `release()`，避免单 env slot 被占死。
+4. 项目 AgentLoop 在 `finally` 中调用 `release()`；释放失败会中止训练并保留租约诊断，避免静默耗尽 env slot。
 
 veRL 的 prompt 必须在训练开始前准备成 parquet。`task_id` 本身不含用户需求；`scripts/prepare_verl_grpo_dataset.py` 会先 reset 一次，只提取用户可见 instruction 写入 prompt，绝不写入 goal、标准答案或 reward_detail。训练时 Interaction 会再次 reset 同一 task，保证每个 group sample 独占环境。
 
@@ -61,11 +61,17 @@ PYTHONPATH=src python3 scripts/prepare_verl_grpo_dataset.py \
   --base-url http://127.0.0.1:5700
 ```
 
-4. 在 veRL 环境中设置 `PYTHONPATH=/path/to/shopping-grpo-longhorizon/src`，使用 `configs/verl/shop_tools.json` 与 `configs/verl/shop_interaction.json` 做一次 2–4 条任务的租约/reward smoke。训练配置必须把 agent 的 `max_assistant_turns` 也设为 35，防止连续非法 tool call 绕过“执行步数”上限；通过后才填写其余超参数并启动 Vanilla GRPO。
+4. 由候选池剩余 task 冻结 validation，避免拿最终 benchmark 调参：
+
+```bash
+PYTHONPATH=src python3 scripts/prepare_grpo_tasks.py validation
+```
+
+5. 生成 train/val parquet 后执行 `scripts/run_vanilla_grpo.sh`。运行时严格执行 35 个工具步；`max_assistant_turns=40` 只是防御性外层上限，避免第 35 个合法调用被 veRL 的“先递增再判断”逻辑提前丢弃。连续三次动作守卫拒绝、工具异常或 35 步未完成都会立即以 0 reward 终止。
 
 ## 仍待服务器验证
 
-- 当前 veRL 版本能否正确解析 Qwen3.5 工具调用和加载 Qwen3.5 多模态 checkpoint；
+- 服务器 veRL/vLLM/Transformers 组合能否加载 Qwen3.5 多模态 checkpoint；项目预检会在加载权重前校验 AgentLoop API，`qwen3_coder` parser 已由本仓库提供；
 - 组内 reward 方差、全 0 group 比例与单 GPU 可承受的 rollout 并发；
 - 1000-task train split 的最终 probe 分布；
 - 合并 checkpoint 后的固定 benchmark v2_50 复测，应与 adapter 推理一致。

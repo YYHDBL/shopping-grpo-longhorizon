@@ -4,6 +4,7 @@ import unittest
 
 from shopping_grpo.grpo_tasks import (
     build_grpo_candidate_manifest,
+    select_disjoint_validation_tasks,
     select_stratified_grpo_tasks,
 )
 
@@ -65,6 +66,16 @@ class GrpoTaskSplitTest(unittest.TestCase):
                 bucket_targets={"short": 1, "medium": 0, "long": 1},
                 seed=1,
             )
+
+    def test_validation_selection_is_deterministic_and_disjoint_from_train(self):
+        candidates = [{"task_id": task_id} for task_id in range(10)]
+        train = [{"task_id": 1}, {"task_id": 4}, {"task_id": 8}]
+
+        rows = select_disjoint_validation_tasks(candidates, train, size=4, seed=7)
+
+        self.assertEqual(len(rows), 4)
+        self.assertFalse({row["task_id"] for row in rows} & {1, 4, 8})
+        self.assertEqual(rows, select_disjoint_validation_tasks(candidates, train, size=4, seed=7))
 
 
 if __name__ == "__main__":  # pragma: no cover

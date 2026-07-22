@@ -8,6 +8,7 @@ from pathlib import Path
 from shopping_grpo.grpo_tasks import (
     build_grpo_candidate_manifest,
     read_jsonl,
+    select_disjoint_validation_tasks,
     select_stratified_grpo_tasks,
     sha256_file,
     task_ids,
@@ -44,11 +45,22 @@ def _select_parser(subparsers):
     parser.add_argument("--seed", type=int, default=20260721)
 
 
+def _validation_parser(subparsers):
+    parser = subparsers.add_parser("validation", help="从候选池冻结与 train 不重叠的 validation task")
+    parser.add_argument("--candidates", type=Path, default=Path("data/splits/grpo_probe_pool_v1.jsonl"))
+    parser.add_argument("--train", type=Path, default=Path("data/splits/grpo_train_v1.jsonl"))
+    parser.add_argument("--output", type=Path, default=Path("data/splits/grpo_val_v1.jsonl"))
+    parser.add_argument("--metadata", type=Path, default=Path("data/splits/grpo_val_v1.metadata.json"))
+    parser.add_argument("--size", type=int, default=50)
+    parser.add_argument("--seed", type=int, default=20260722)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ShopSimulator GRPO task split")
     subparsers = parser.add_subparsers(dest="command", required=True)
     _candidate_parser(subparsers)
     _select_parser(subparsers)
+    _validation_parser(subparsers)
     return parser.parse_args()
 
 
@@ -80,7 +92,7 @@ def main():
             "excluded_benchmark_task_count": len(task_ids(benchmark_rows)),
             "selection": "deterministic_random_without_replacement",
         }
-    else:
+    elif args.command == "select":
         rows, report = select_stratified_grpo_tasks(
             read_jsonl(args.candidates),
             read_jsonl(args.probes),
@@ -97,6 +109,21 @@ def main():
             "probe_rollouts_sha256": sha256_file(args.probes),
             "length_definition": {"short": "<=10 executed tool steps", "medium": "11-20", "long": ">=21"},
             **report,
+        }
+    else:
+        candidate_rows = read_jsonl(args.candidates)
+        train_rows = read_jsonl(args.train)
+        rows = select_disjoint_validation_tasks(candidate_rows, train_rows, args.size, args.seed)
+        metadata = {
+            "split_version": args.output.stem,
+            "purpose": "held-out validation during Vanilla GRPO; excluded from online updates and final benchmark",
+            "seed": args.seed,
+            "task_count": len(rows),
+            "candidate_pool": str(args.candidates),
+            "candidate_pool_sha256": sha256_file(args.candidates),
+            "train_split": str(args.train),
+            "train_split_sha256": sha256_file(args.train),
+            "selection": "deterministic_random_after_train_exclusion",
         }
     write_jsonl(args.output, rows)
     args.metadata.parent.mkdir(parents=True, exist_ok=True)

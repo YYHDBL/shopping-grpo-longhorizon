@@ -136,6 +136,20 @@ def select_stratified_grpo_tasks(
     return selected, report
 
 
+def select_disjoint_validation_tasks(
+    candidate_rows: Iterable[dict], train_rows: Iterable[dict], size: int, seed: int
+) -> list[dict]:
+    """从同一冻结候选池中选择未进入在线训练的 validation task。"""
+    train = task_ids(train_rows)
+    available = sorted(task_ids(candidate_rows) - train)
+    if size < 1:
+        raise ValueError("validation size must be positive")
+    if size > len(available):
+        raise ValueError("validation size exceeds tasks remaining after train exclusion")
+    random.Random(int(seed)).shuffle(available)
+    return [{"task_id": task_id} for task_id in available[: int(size)]]
+
+
 def freeze_benchmark_subset(
     parent_rows: Iterable[dict], parent_name: str, size: int, parent_sha256: str
 ) -> tuple[list[dict], dict]:

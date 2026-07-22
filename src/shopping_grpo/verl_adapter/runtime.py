@@ -7,6 +7,7 @@ from contextvars import ContextVar
 
 current_environment: ContextVar = ContextVar("shopsimulator_environment", default=None)
 current_runtime_state: ContextVar = ContextVar("shopsimulator_runtime_state", default=None)
+current_interaction_instance_id: ContextVar = ContextVar("shopsimulator_instance_id", default=None)
 
 
 def make_runtime_state(task_id: int, max_steps: int) -> dict:
@@ -16,6 +17,9 @@ def make_runtime_state(task_id: int, max_steps: int) -> dict:
         "max_steps": int(max_steps),
         "steps": [],
         "done": False,
+        "terminate": False,
+        "termination_reason": None,
+        "consecutive_guard_rejections": 0,
         "terminal_result": {},
         "final_reward": 0.0,
         "error": None,
@@ -25,6 +29,11 @@ def make_runtime_state(task_id: int, max_steps: int) -> dict:
 def terminal_reward(state: dict) -> float:
     """Vanilla GRPO 的唯一奖励：ShopSimulator 原生正常终局 reward。"""
     terminal = state.get("terminal_result") or {}
-    if not state.get("done") or terminal.get("done") is not True or terminal.get("over") is not True:
+    if (
+        state.get("error")
+        or not state.get("done")
+        or terminal.get("done") is not True
+        or terminal.get("over") is not True
+    ):
         return 0.0
     return float(state.get("final_reward", 0.0))

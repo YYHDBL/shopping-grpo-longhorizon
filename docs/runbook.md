@@ -139,3 +139,18 @@ PYTHONPATH=src python3 scripts/train_lora_sft.py \
   --swanlab --swanlab-project shopping-grpo \
   --swanlab-run-name qwen35-2b-shopping-lora-v1
 ```
+
+## Vanilla GRPO
+
+正式训练使用 `configs/verl/vanilla_grpo.yaml` 和 `scripts/run_vanilla_grpo.sh`。先运行 `prepare_grpo_tasks.py select` 冻结 train，再运行 `prepare_grpo_tasks.py validation` 从候选池剩余任务中冻结 50 个不重叠 validation task；两份清单分别交给 `prepare_verl_grpo_dataset.py` 生成 parquet。
+
+默认一次并发 `train_batch_size(2) × rollout.n(4) = 8` 条轨迹，因此 ShopSimulator 的 `env_max_num` 至少为 8。启动前设置 `GRPO_MODEL_PATH`、`GRPO_TRAIN_FILE`、`GRPO_VAL_FILE`、`GRPO_OUTPUT_DIR` 和 `SHOPSIM_BASE_URL`，然后运行：
+
+```bash
+bash scripts/run_vanilla_grpo.sh \
+  trainer.total_training_steps=1 \
+  trainer.save_freq=-1 \
+  trainer.test_freq=-1
+```
+
+一更新步 smoke 成功并确认 8 个环境全部释放后，去掉三个覆盖项启动固定的 500-step Vanilla 基线。工具异常、动作守卫连续拒绝、max_steps 和 assistant 无工具结束都必须得到 0 reward；只有 ShopSimulator 正常 `done && over` 的终局 reward 可以进入 GRPO。
