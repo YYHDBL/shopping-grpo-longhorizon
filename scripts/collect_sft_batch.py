@@ -193,7 +193,7 @@ def _collect_until_target(
         progress.close()
     if infrastructure_failed:
         raise CollectionInfrastructureError(
-            "ShopSimulator infrastructure failure; collection stopped before the next task"
+            "collection infrastructure failure; stopped before the next task"
         )
     return written, accepted
 
