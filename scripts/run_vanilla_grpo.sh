@@ -18,7 +18,7 @@ cd "$PROJECT_ROOT"
 python3 "$PROJECT_ROOT/scripts/generate_verl_shop_configs.py" \
   --tool-output "$PROJECT_ROOT/configs/verl/shop_tools.json"
 
-python3 "$PROJECT_ROOT/scripts/check_grpo_runtime.py"
+python3 "$PROJECT_ROOT/scripts/check_grpo_runtime.py" "$@"
 
 exec python3 -m verl.trainer.main_ppo \
   --config-path="$PROJECT_ROOT/configs/verl" \

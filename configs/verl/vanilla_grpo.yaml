@@ -99,6 +99,13 @@ algorithm:
     rollout_rs: null
     loss_type: ppo_clip
 
+# Project-side bounded filtering only; disabled unless explicitly enabled for a run.
+shopping_dynamic_sampling:
+  enable: false
+  metric: seq_reward
+  max_num_gen_batches: 3
+  reward_tolerance: 1.0e-8
+
 reward_model:
   enable: false
 

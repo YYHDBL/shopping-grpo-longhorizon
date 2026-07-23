@@ -16,7 +16,21 @@ from shopping_grpo.verl_adapter.tools import ShopSimulatorTool
 
 
 def make_tool(name):
-    return ShopSimulatorTool({}, {"function": {"name": name}})
+    schema = {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": f"Test-only {name} tool.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    }
+    try:
+        from verl.tools.schemas import OpenAIFunctionToolSchema
+    except ImportError:
+        tool_schema = schema
+    else:
+        tool_schema = OpenAIFunctionToolSchema.model_validate(schema)
+    return ShopSimulatorTool({}, tool_schema)
 
 
 class VerlAdapterRuntimeTest(unittest.TestCase):

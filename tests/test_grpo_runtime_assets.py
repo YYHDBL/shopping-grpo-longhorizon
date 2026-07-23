@@ -25,6 +25,11 @@ class GrpoRuntimeAssetsTest(unittest.TestCase):
         self.assertIn("rollout_is: null", config)
         self.assertIn("rollout_rs: null", config)
         self.assertIn("loss_type: ppo_clip", config)
+        self.assertIn("shopping_dynamic_sampling:", config)
+        self.assertIn("enable: false", config)
+        self.assertIn("metric: seq_reward", config)
+        self.assertIn("max_num_gen_batches: 3", config)
+        self.assertIn("reward_tolerance: 1.0e-8", config)
         self.assertIn(
             "worker_process_setup_hook: shopping_grpo.verl_compat.install_torch_padding_fallback",
             config,
@@ -39,6 +44,7 @@ class GrpoRuntimeAssetsTest(unittest.TestCase):
         self.assertTrue(launcher.is_file())
         content = launcher.read_text(encoding="utf-8")
         self.assertIn("verl.trainer.main_ppo", content)
+        self.assertIn('check_grpo_runtime.py" "$@"', content)
         self.assertNotIn("agentic-grpo-longhorizon", content)
         self.assertNotIn("shop_interaction.json", content)
 

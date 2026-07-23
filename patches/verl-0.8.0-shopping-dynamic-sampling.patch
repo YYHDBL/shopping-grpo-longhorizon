@@ -1,0 +1,240 @@
+--- a/verl/trainer/ppo/ray_trainer.py
++++ b/verl/trainer/ppo/ray_trainer.py
+@@ -20,0 +21,2 @@
++# SHOPPING_GRPO_DYNAMIC_SAMPLING_PATCH_V1
++
+@@ -1382,0 +1385,49 @@
++        dynamic_sampling_config = self.config.get("shopping_dynamic_sampling", {})
++        dynamic_sampling_enabled = bool(dynamic_sampling_config.get("enable", False))
++        if dynamic_sampling_enabled:
++            from shopping_grpo.verl_dynamic_sampling import select_reward_varying_groups
++
++            dynamic_sampling_metric = dynamic_sampling_config.get("metric", "seq_reward")
++            dynamic_max_gen_batches = int(dynamic_sampling_config.get("max_num_gen_batches", 0))
++            dynamic_reward_tolerance = float(dynamic_sampling_config.get("reward_tolerance", 1.0e-8))
++            if dynamic_sampling_metric != "seq_reward":
++                raise ValueError(
++                    "shopping_dynamic_sampling.metric must be 'seq_reward', "
++                    f"got {dynamic_sampling_metric!r}"
++                )
++            if dynamic_max_gen_batches <= 0:
++                raise ValueError("shopping_dynamic_sampling.max_num_gen_batches must be positive")
++            if dynamic_reward_tolerance < 0 or not np.isfinite(dynamic_reward_tolerance):
++                raise ValueError(
++                    "shopping_dynamic_sampling.reward_tolerance must be finite and non-negative"
++                )
++            if self.config.algorithm.adv_estimator != AdvantageEstimator.GRPO:
++                raise ValueError("shopping_dynamic_sampling only supports Vanilla GRPO")
++            if not self.config.algorithm.rollout_correction.get("bypass_mode", False):
++                raise ValueError("shopping_dynamic_sampling requires rollout-log-prob bypass mode")
++            if not self.config.actor_rollout_ref.rollout.calculate_log_probs:
++                raise ValueError("shopping_dynamic_sampling requires rollout.calculate_log_probs=true")
++
++            dynamic_target_prompts = int(self.config.data.train_batch_size)
++            dynamic_rollout_n = int(self.config.actor_rollout_ref.rollout.n)
++            dynamic_accepted_batches = []
++            dynamic_accepted_prompts = 0
++            dynamic_num_gen_batches = 0
++            dynamic_generated_groups = 0
++            dynamic_filtered_groups = 0
++            dynamic_generated_trajectories = 0
++            print(
++                "SHOPPING_GRPO_DYNAMIC_SAMPLING_CONFIG "
++                + json.dumps(
++                    {
++                        "enable": True,
++                        "metric": dynamic_sampling_metric,
++                        "max_num_gen_batches": dynamic_max_gen_batches,
++                        "reward_tolerance": dynamic_reward_tolerance,
++                        "train_batch_size": dynamic_target_prompts,
++                        "rollout_n": dynamic_rollout_n,
++                    },
++                    sort_keys=True,
++                )
++            )
++
+@@ -1409,2 +1460,4 @@
+-        # we start from step 1
+-        self.global_steps += 1
++        # The unpatched trainer uses a one-based in-flight step. Dynamic sampling
++        # keeps the committed counter unchanged until an optimizer update occurs.
++        if not dynamic_sampling_enabled:
++            self.global_steps += 1
+@@ -1414,0 +1468 @@
++        first_step = self.global_steps + 1 if dynamic_sampling_enabled else self.global_steps
+@@ -1416 +1470 @@
+-            self.global_steps in self.config.global_profiler.steps
++            first_step in self.config.global_profiler.steps
+@@ -1423,0 +1478,2 @@
++                current_step = self.global_steps + 1 if dynamic_sampling_enabled else self.global_steps
++                optimizer_updated = False
+@@ -1446 +1502 @@
+-                gen_batch.meta_info["global_steps"] = self.global_steps
++                gen_batch.meta_info["global_steps"] = current_step
+@@ -1464 +1520 @@
+-                is_last_step = self.global_steps >= self.total_training_steps
++                is_last_step = current_step >= self.total_training_steps
+@@ -1471 +1527,2 @@
+-                        self.checkpoint_manager.sleep_replicas()
++                        if not dynamic_sampling_enabled:
++                            self.checkpoint_manager.sleep_replicas()
+@@ -1526,0 +1584,123 @@
++                    if dynamic_sampling_enabled:
++                        seq_rewards = reward_tensor.sum(dim=-1).detach().cpu().tolist()
++                        batch_uids = batch.non_tensor_batch["uid"].tolist()
++                        _, group_stats = select_reward_varying_groups(
++                            batch_uids,
++                            seq_rewards,
++                            tolerance=dynamic_reward_tolerance,
++                        )
++                        invalid_group_sizes = [
++                            len(group["indices"])
++                            for group in group_stats["groups"]
++                            if len(group["indices"]) != dynamic_rollout_n
++                        ]
++                        if invalid_group_sizes:
++                            raise RuntimeError(
++                                "shopping dynamic sampling found uid groups whose sizes do not match "
++                                f"rollout.n={dynamic_rollout_n}: {invalid_group_sizes}"
++                            )
++
++                        dynamic_num_gen_batches += 1
++                        dynamic_generated_groups += group_stats["num_groups"]
++                        dynamic_filtered_groups += group_stats["dropped_group_count"]
++                        dynamic_generated_trajectories += group_stats["num_trajectories"]
++                        remaining_prompts = dynamic_target_prompts - dynamic_accepted_prompts
++                        accepted_uids = list(group_stats["kept_uids"][:remaining_prompts])
++                        accepted_uid_set = set(accepted_uids)
++                        accepted_indices = [
++                            index for index, uid in enumerate(batch_uids) if uid in accepted_uid_set
++                        ]
++                        print(
++                            "SHOPPING_GRPO_DYNAMIC_SAMPLING_BATCH "
++                            + json.dumps(
++                                {
++                                    "generation_batch": dynamic_num_gen_batches,
++                                    "groups": [
++                                        {
++                                            "uid": group["uid"],
++                                            "rewards": group["rewards"],
++                                            "kept": group["kept"],
++                                            "accepted": group["uid"] in accepted_uid_set,
++                                        }
++                                        for group in group_stats["groups"]
++                                    ],
++                                    "accepted_prompts_after_batch": (
++                                        dynamic_accepted_prompts + len(accepted_uids)
++                                    ),
++                                    "target_prompts": dynamic_target_prompts,
++                                },
++                                sort_keys=True,
++                            )
++                        )
++                        if accepted_indices:
++                            accepted_batch = batch.select_idxs(accepted_indices)
++                            accepted_batch.meta_info.pop("global_token_num", None)
++                            accepted_batch.meta_info.pop("images_seqlens", None)
++                            dynamic_accepted_batches.append(accepted_batch)
++                            dynamic_accepted_prompts += len(accepted_uids)
++
++                        if dynamic_accepted_prompts < dynamic_target_prompts:
++                            if curr_step_profile:
++                                self._stop_profiling(True)
++                            if dynamic_num_gen_batches >= dynamic_max_gen_batches:
++                                raise RuntimeError(
++                                    "shopping dynamic sampling exhausted "
++                                    f"max_num_gen_batches={dynamic_max_gen_batches} with "
++                                    f"accepted_prompts={dynamic_accepted_prompts}/"
++                                    f"{dynamic_target_prompts}; refusing a zero-signal update"
++                                )
++                            continue
++
++                        batch = DataProto.concat(dynamic_accepted_batches)
++                        if self.config.trainer.balance_batch:
++                            self._balance_batch(batch, metrics=metrics)
++                        batch.meta_info["global_token_num"] = torch.sum(
++                            batch.batch["attention_mask"], dim=-1
++                        ).tolist()
++                        images_seqlens_all = []
++                        for multi_modal_input in batch.non_tensor_batch["multi_modal_inputs"]:
++                            if "image_grid_thw" not in multi_modal_input.keys():
++                                continue
++                            images_seqlens_all.extend(multi_modal_input["images_seqlens"].tolist())
++                        batch.meta_info["images_seqlens"] = images_seqlens_all
++                        reward_tensor, reward_extra_infos_dict = extract_reward(batch)
++                        metrics.update(
++                            {
++                                "shopping_dynamic_sampling/generation_batches": dynamic_num_gen_batches,
++                                "shopping_dynamic_sampling/generated_groups": dynamic_generated_groups,
++                                "shopping_dynamic_sampling/filtered_groups": dynamic_filtered_groups,
++                                "shopping_dynamic_sampling/generated_trajectories": (
++                                    dynamic_generated_trajectories
++                                ),
++                                "shopping_dynamic_sampling/trained_groups": dynamic_accepted_prompts,
++                            }
++                        )
++                        _, ready_group_stats = select_reward_varying_groups(
++                            batch.non_tensor_batch["uid"].tolist(),
++                            reward_tensor.sum(dim=-1).detach().cpu().tolist(),
++                            tolerance=dynamic_reward_tolerance,
++                        )
++                        print(
++                            "SHOPPING_GRPO_DYNAMIC_SAMPLING_READY "
++                            + json.dumps(
++                                {
++                                    "generation_batches": dynamic_num_gen_batches,
++                                    "generated_groups": dynamic_generated_groups,
++                                    "filtered_groups": dynamic_filtered_groups,
++                                    "generated_trajectories": dynamic_generated_trajectories,
++                                    "trained_groups": dynamic_accepted_prompts,
++                                    "trained_group_rewards": [
++                                        group["rewards"] for group in ready_group_stats["groups"]
++                                    ],
++                                },
++                                sort_keys=True,
++                            )
++                        )
++                        self.checkpoint_manager.sleep_replicas()
++                        dynamic_accepted_batches = []
++                        dynamic_accepted_prompts = 0
++                        dynamic_num_gen_batches = 0
++                        dynamic_generated_groups = 0
++                        dynamic_filtered_groups = 0
++                        dynamic_generated_trajectories = 0
++
+@@ -1643 +1823 @@
+-                    if self.config.trainer.critic_warmup > self.global_steps:
++                    if self.config.trainer.critic_warmup > current_step:
+@@ -1645 +1825 @@
+-                        self.checkpoint_manager.update_weights(self.global_steps)
++                        self.checkpoint_manager.update_weights(current_step)
+@@ -1649,0 +1830,3 @@
++                        optimizer_updated = True
++                        if dynamic_sampling_enabled:
++                            self.global_steps = current_step
+@@ -1665 +1848 @@
+-                            or self.global_steps % self.config.trainer.save_freq == 0
++                            or current_step % self.config.trainer.save_freq == 0
+@@ -1675 +1858 @@
+-                            self.checkpoint_manager.update_weights(self.global_steps)
++                            self.checkpoint_manager.update_weights(current_step)
+@@ -1687 +1870 @@
+-                    is_last_step or self.global_steps % self.config.trainer.test_freq == 0
++                    is_last_step or current_step % self.config.trainer.test_freq == 0
+@@ -1697 +1880 @@
+-                        self.global_steps + 1 in self.config.global_profiler.steps
++                        current_step + 1 in self.config.global_profiler.steps
+@@ -1715 +1898 @@
+-                        "training/global_step": self.global_steps,
++                        "training/global_step": current_step,
+@@ -1750 +1933 @@
+-                logger.log(data=metrics, step=self.global_steps)
++                logger.log(data=metrics, step=current_step)
+@@ -1753 +1936,6 @@
+-                self.global_steps += 1
++                if dynamic_sampling_enabled and not optimizer_updated:
++                    raise RuntimeError(
++                        "shopping dynamic sampling reached logging without an actor optimizer update"
++                    )
++                if not dynamic_sampling_enabled:
++                    self.global_steps += 1
