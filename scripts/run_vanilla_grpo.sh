@@ -9,23 +9,14 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${GRPO_OUTPUT_DIR:?set GRPO_OUTPUT_DIR to a new checkpoint directory}"
 
 export SHOPPING_GRPO_ROOT="$PROJECT_ROOT"
-export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-SHOPSIM_BASE_URL="${SHOPSIM_BASE_URL:-http://127.0.0.1:5700}"
-
-# Prefer the checked-in sibling reference checkout when it exists. Its veRL fork
-# imports one helper from the adjacent project root, so both paths are required.
-REFERENCE_ROOT="$PROJECT_ROOT/../agentic-grpo-longhorizon"
-if [[ -d "$REFERENCE_ROOT/verl/verl" ]]; then
-  export PYTHONPATH="$REFERENCE_ROOT/verl:$REFERENCE_ROOT/agentic-grpo-longhorizon:$PYTHONPATH"
-fi
+# 不继承旧 shell 中可能指向 reference fork 的 PYTHONPATH。
+export PYTHONPATH="$PROJECT_ROOT/src"
+export SHOPSIM_BASE_URL="${SHOPSIM_BASE_URL:-http://127.0.0.1:5700}"
 
 cd "$PROJECT_ROOT"
 
 python3 "$PROJECT_ROOT/scripts/generate_verl_shop_configs.py" \
-  --tool-output "$PROJECT_ROOT/configs/verl/shop_tools.json" \
-  --interaction-output "$PROJECT_ROOT/configs/verl/shop_interaction.json" \
-  --base-url "$SHOPSIM_BASE_URL" \
-  --max-steps 35
+  --tool-output "$PROJECT_ROOT/configs/verl/shop_tools.json"
 
 python3 "$PROJECT_ROOT/scripts/check_grpo_runtime.py"
 

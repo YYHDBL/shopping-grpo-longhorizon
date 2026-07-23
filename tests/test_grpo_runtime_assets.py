@@ -18,14 +18,26 @@ class GrpoRuntimeAssetsTest(unittest.TestCase):
         self.assertIn("adv_estimator: grpo", config)
         self.assertIn("format: qwen3_coder", config)
         self.assertIn("default_agent_loop: shopping_tool_agent", config)
+        self.assertIn("use_remove_padding: false", config)
         self.assertIn("reward_model:\n  enable: false", config)
+        self.assertNotIn("interaction_config_path", config)
         self.assertNotIn("prm", config.casefold())
         self.assertNotIn("lata", config.casefold())
 
-    def test_server_launcher_exists(self):
+    def test_server_launcher_uses_installed_verl_instead_of_reference_fork(self):
         launcher = ROOT / "scripts/run_vanilla_grpo.sh"
         self.assertTrue(launcher.is_file())
-        self.assertIn("verl.trainer.main_ppo", launcher.read_text(encoding="utf-8"))
+        content = launcher.read_text(encoding="utf-8")
+        self.assertIn("verl.trainer.main_ppo", content)
+        self.assertNotIn("agentic-grpo-longhorizon", content)
+        self.assertNotIn("shop_interaction.json", content)
+
+    def test_grpo_dependencies_pin_the_supported_runtime(self):
+        requirements = (ROOT / "requirements-grpo.txt").read_text(encoding="utf-8")
+        self.assertIn("verl==0.8.0", requirements)
+        self.assertIn("vllm==0.25.1", requirements)
+        self.assertIn("transformers==5.11.0", requirements)
+        self.assertIn("tensordict==0.10.0", requirements)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -6,11 +6,12 @@ from scripts.prepare_verl_grpo_dataset import build_verl_record
 
 
 class PrepareVerlDatasetTest(unittest.TestCase):
-    def test_record_uses_visible_instruction_and_interaction_task_id(self):
+    def test_record_uses_visible_instruction_and_top_level_task_id(self):
         row = build_verl_record(7, "Find a blue mug under $20.", split="train", index=3)
 
         self.assertEqual(row["prompt"][-1], {"role": "user", "content": "Find a blue mug under $20."})
-        self.assertEqual(row["extra_info"]["interaction_kwargs"], {"name": "shopsimulator", "task_id": 7})
+        self.assertEqual(row["extra_info"]["task_id"], 7)
+        self.assertNotIn("interaction_kwargs", row["extra_info"])
         serialized = str(row)
         self.assertNotIn("reward_detail", serialized)
         self.assertNotIn("goal", serialized)

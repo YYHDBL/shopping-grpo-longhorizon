@@ -222,7 +222,7 @@ PYTHONPATH=src python3 scripts/prepare_verl_grpo_dataset.py \
   --base-url "$SHOPSIM_BASE_URL" --split val
 ```
 
-启动脚本优先使用相邻 `agentic-grpo-longhorizon/verl` checkout，并会在加载权重前验证所需 veRL Interaction/AgentLoop API。默认 `train_batch_size=2`、`rollout.n=4`，因此 ShopSimulator 至少启动 8 个环境槽。进入已安装该 veRL checkout 及其 vLLM 依赖的服务器环境后执行：
+GRPO 使用独立的干净 Python 3.12 环境，固定版本和安装步骤见 [Vanilla GRPO 服务器执行手册](docs/grpo-runtime-setup.md)。不要安装或把相邻 `agentic-grpo-longhorizon/verl` reference fork 放进 `PYTHONPATH`。默认 `train_batch_size=2`、`rollout.n=4`，因此 ShopSimulator 至少启动 8 个环境槽。
 
 ```bash
 export GRPO_MODEL_PATH=/absolute/path/qwen35-2b-shopping-sft-v2-merged
@@ -234,7 +234,7 @@ export SHOPSIM_BASE_URL=http://127.0.0.1:5700
 bash scripts/run_vanilla_grpo.sh
 ```
 
-先做一更新步 smoke 时，在命令末尾添加 `trainer.total_training_steps=1 trainer.save_freq=-1 trainer.test_freq=-1`。多 GPU 只通过 Hydra CLI 覆盖 `trainer.n_gpus_per_node` 和 `actor_rollout_ref.rollout.tensor_model_parallel_size`；不要先改正式基线文件。启动脚本不下载模型，权重位置完全由 `GRPO_MODEL_PATH` 决定。
+先做一更新步 smoke 时，在命令末尾添加 `trainer.total_training_steps=1 trainer.val_before_train=false trainer.save_freq=-1 trainer.test_freq=-1`，避免训练前先跑完整验证集。多 GPU 只通过 Hydra CLI 覆盖 `trainer.n_gpus_per_node` 和 `actor_rollout_ref.rollout.tensor_model_parallel_size`；不要先改正式基线文件。启动脚本不下载模型，权重位置完全由 `GRPO_MODEL_PATH` 决定。
 
 ## 验证
 

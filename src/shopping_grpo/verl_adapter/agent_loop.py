@@ -1,15 +1,34 @@
-"""Shopping-specific lifecycle fixes layered on veRL's standard ToolAgentLoop."""
+"""veRL 0.8 ToolAgentLoop 的 ShopSimulator 轨迹生命周期适配。"""
 
 from __future__ import annotations
 
-# Importing registers qwen3_coder before ToolAgentLoop.init_class resolves the parser.
-from shopping_grpo.verl_adapter import qwen3_coder_parser as _qwen3_coder_parser  # noqa: F401
-from shopping_grpo.verl_adapter.runtime import current_runtime_state
 from verl.experimental.agent_loop.tool_agent_loop import AgentState, ToolAgentLoop
+
+from shopping_grpo.verl_adapter.runtime import (
+    current_runtime_state,
+    task_id_from_kwargs,
+    terminal_reward,
+)
+from shopping_grpo.verl_adapter.session import ShopSimulatorSession
 
 
 class ShoppingToolAgentLoop(ToolAgentLoop):
     """Vanilla ToolAgentLoop with deterministic ShopSimulator termination and release."""
+
+    def __init__(
+        self,
+        *args,
+        base_url="http://127.0.0.1:5700",
+        timeout=60,
+        max_steps=35,
+        env_factory=None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.base_url = base_url
+        self.timeout = int(timeout)
+        self.max_steps = int(max_steps)
+        self.env_factory = env_factory
 
     async def _handle_processing_tools_state(self, agent_data):
         runtime_state = current_runtime_state.get()
@@ -25,10 +44,27 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
         return next_state
 
     async def run(self, sampling_params, **kwargs):
+        task_id = task_id_from_kwargs(kwargs)
+        session = ShopSimulatorSession(
+            base_url=self.base_url,
+            timeout=self.timeout,
+            max_steps=self.max_steps,
+            env_factory=self.env_factory,
+        )
+        state = await session.start(task_id)
         try:
-            return await super().run(sampling_params, **kwargs)
+            output = await super().run(sampling_params, **kwargs)
+            if not state["done"] and not state["error"]:
+                state["error"] = "assistant_finished_without_environment_done"
+                state["termination_reason"] = state["error"]
+                state["terminate"] = True
+            output.reward_score = terminal_reward(state)
+            output.extra_fields["shopping"] = {
+                "task_id": task_id,
+                "steps": len(state["steps"]),
+                "termination_reason": state["termination_reason"],
+                "error": state["error"],
+            }
+            return output
         finally:
-            for interaction in getattr(self, "interaction_map", {}).values():
-                finalize = getattr(interaction, "finalize_current_interaction", None)
-                if finalize is not None:
-                    await finalize()
+            await session.close()

@@ -4,13 +4,14 @@ import asyncio
 import threading
 import unittest
 
-from shopping_grpo.verl_adapter.interaction import ShopSimulatorInteraction
 from shopping_grpo.verl_adapter.runtime import (
     current_environment,
     current_runtime_state,
     make_runtime_state,
+    task_id_from_kwargs,
     terminal_reward,
 )
+from shopping_grpo.verl_adapter.session import ShopSimulatorSession
 from shopping_grpo.verl_adapter.tools import ShopSimulatorTool
 
 
@@ -51,6 +52,20 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
         state = make_runtime_state(task_id=2, max_steps=35)
         self.assertNotIn("goal", state)
         self.assertNotIn("reward_detail", state)
+
+    def test_task_id_is_read_from_verl_extra_info(self):
+        self.assertEqual(task_id_from_kwargs({"extra_info": {"task_id": 42}}), 42)
+
+    def test_task_id_accepts_numpy_style_scalar_container(self):
+        class Scalar:
+            def item(self):
+                return {"task_id": 43}
+
+        self.assertEqual(task_id_from_kwargs({"extra_info": Scalar()}), 43)
+
+    def test_missing_task_id_fails_before_acquiring_an_environment(self):
+        with self.assertRaisesRegex(ValueError, "task_id"):
+            task_id_from_kwargs({"extra_info": {"split": "train"}})
 
     def test_terminal_observation_is_not_returned_to_the_model(self):
         class FakeEnv:
@@ -145,7 +160,7 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
 
         asyncio.run(run())
 
-    def test_interaction_releases_its_environment_on_finalize(self):
+    def test_session_releases_its_environment_on_close(self):
         """无论正常终局还是异常路径，veRL lifecycle 都必须归还 ShopSimulator 租约。"""
         created = []
 
@@ -162,17 +177,16 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
                 self.released = True
 
         async def run():
-            interaction = ShopSimulatorInteraction({"max_steps": 35}, env_factory=FakeEnv)
-            await interaction.start_interaction("trajectory-1", task_id=8)
-            state = interaction._instances["trajectory-1"]["state"]
+            session = ShopSimulatorSession(max_steps=35, env_factory=FakeEnv)
+            state = await session.start(task_id=8)
             state.update({"done": True, "terminal_result": {"done": True, "over": True}, "final_reward": 1.0})
-            self.assertEqual(await interaction.calculate_score("trajectory-1"), 1.0)
-            await interaction.finalize_interaction("trajectory-1")
+            self.assertEqual(terminal_reward(state), 1.0)
+            await session.close()
 
         asyncio.run(run())
         self.assertTrue(created[0].released)
 
-    def test_interaction_reset_and_release_run_off_the_event_loop_thread(self):
+    def test_session_reset_and_release_run_off_the_event_loop_thread(self):
         main_thread = threading.get_ident()
         created = []
 
@@ -190,13 +204,35 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
                 self.release_thread = threading.get_ident()
 
         async def run():
-            interaction = ShopSimulatorInteraction({}, env_factory=FakeEnv)
-            await interaction.start_interaction("trajectory-1", task_id=8)
-            await interaction.finalize_interaction("trajectory-1")
+            session = ShopSimulatorSession(env_factory=FakeEnv)
+            await session.start(task_id=8)
+            await session.close()
 
         asyncio.run(run())
         self.assertNotEqual(created[0].reset_thread, main_thread)
         self.assertNotEqual(created[0].release_thread, main_thread)
+
+    def test_reset_failure_still_releases_the_environment(self):
+        created = []
+
+        class FakeEnv:
+            def __init__(self, **kwargs):
+                self.released = False
+                created.append(self)
+
+            def reset(self, task_id):
+                raise RuntimeError("reset failed")
+
+            def release(self):
+                self.released = True
+
+        async def run():
+            session = ShopSimulatorSession(env_factory=FakeEnv)
+            with self.assertRaisesRegex(RuntimeError, "reset failed"):
+                await session.start(task_id=8)
+
+        asyncio.run(run())
+        self.assertTrue(created[0].released)
 
     def test_release_failure_is_not_silently_hidden_or_forgotten(self):
         class FakeEnv:
@@ -210,11 +246,11 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
                 raise RuntimeError("release failed")
 
         async def run():
-            interaction = ShopSimulatorInteraction({}, env_factory=FakeEnv)
-            await interaction.start_interaction("trajectory-1", task_id=8)
+            session = ShopSimulatorSession(env_factory=FakeEnv)
+            await session.start(task_id=8)
             with self.assertRaisesRegex(RuntimeError, "release failed"):
-                await interaction.finalize_interaction("trajectory-1")
-            self.assertIn("trajectory-1", interaction._instances)
+                await session.close()
+            self.assertEqual(session.state["error"], "release_error:RuntimeError:release failed")
 
         asyncio.run(run())
 

@@ -7,7 +7,6 @@ from contextvars import ContextVar
 
 current_environment: ContextVar = ContextVar("shopsimulator_environment", default=None)
 current_runtime_state: ContextVar = ContextVar("shopsimulator_runtime_state", default=None)
-current_interaction_instance_id: ContextVar = ContextVar("shopsimulator_instance_id", default=None)
 
 
 def make_runtime_state(task_id: int, max_steps: int) -> dict:
@@ -37,3 +36,13 @@ def terminal_reward(state: dict) -> float:
     ):
         return 0.0
     return float(state.get("final_reward", 0.0))
+
+
+def task_id_from_kwargs(kwargs: dict) -> int:
+    """从 veRL parquet 的 extra_info 读取当前任务，缺失时立即失败。"""
+    extra_info = kwargs.get("extra_info")
+    if hasattr(extra_info, "item"):
+        extra_info = extra_info.item()
+    if not isinstance(extra_info, dict) or "task_id" not in extra_info:
+        raise ValueError("veRL sample extra_info is missing task_id")
+    return int(extra_info["task_id"])

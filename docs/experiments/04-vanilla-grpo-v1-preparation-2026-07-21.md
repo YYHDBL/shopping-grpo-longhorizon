@@ -35,12 +35,14 @@ PYTHONPATH=src python3 scripts/merge_lora_adapter.py \
 
 `src/shopping_grpo/verl_adapter/` 只做四件事：
 
-1. `Interaction.start_interaction` 对每条 rollout 调 `reset(task_id)`，取得独占 HTTP 环境；
+1. `ShoppingToolAgentLoop.run` 对每条 rollout 调 `reset(task_id)`，取得独占 HTTP 环境；
 2. `Tool` 复用仓库唯一的 `SHOP_TOOL_SCHEMAS`、`tool_call_to_action` 和动作守卫；
-3. `calculate_score` 只返回环境原生终局 reward；
-4. 项目 AgentLoop 在 `finally` 中调用 `release()`；释放失败会中止训练并保留租约诊断，避免静默耗尽 env slot。
+3. AgentLoop 只把环境原生终局 reward 写入 veRL 输出；
+4. AgentLoop 在 `finally` 中调用 `release()`；释放失败会中止训练并保留租约诊断，避免静默耗尽 env slot。
 
-veRL 的 prompt 必须在训练开始前准备成 parquet。`task_id` 本身不含用户需求；`scripts/prepare_verl_grpo_dataset.py` 会先 reset 一次，只提取用户可见 instruction 写入 prompt，绝不写入 goal、标准答案或 reward_detail。训练时 Interaction 会再次 reset 同一 task，保证每个 group sample 独占环境。
+运行时固定为 pip `veRL 0.8.0`。它已经内置 Qwen3.5 的 `qwen3_coder` parser，因此删除项目重复 parser；它也不再提供 reference fork 的 `verl.interactions`，环境生命周期由项目 AgentLoop 直接管理。完整版本矩阵和服务器安装步骤见 `docs/grpo-runtime-setup.md`。
+
+veRL 的 prompt 必须在训练开始前准备成 parquet。`task_id` 本身不含用户需求；`scripts/prepare_verl_grpo_dataset.py` 会先 reset 一次，只提取用户可见 instruction 写入 prompt，绝不写入 goal、标准答案或 reward_detail。训练时 AgentLoop 会再次 reset 同一 task，保证每个 group sample 独占环境。
 
 ## 服务器执行顺序
 
@@ -71,7 +73,7 @@ PYTHONPATH=src python3 scripts/prepare_grpo_tasks.py validation
 
 ## 仍待服务器验证
 
-- 服务器 veRL/vLLM/Transformers 组合能否加载 Qwen3.5 多模态 checkpoint；项目预检会在加载权重前校验 AgentLoop API，`qwen3_coder` parser 已由本仓库提供；
+- 固定的 veRL 0.8.0 / vLLM 0.25.1 / Transformers 5.11.0 能否在目标 GPU 上完成一次 Qwen3.5 policy update；项目预检会在加载权重前校验版本、导入来源、AgentLoop API 和 veRL 内置 `qwen3_coder` parser；
 - 组内 reward 方差、全 0 group 比例与单 GPU 可承受的 rollout 并发；
 - 1000-task train split 的最终 probe 分布；
 - 合并 checkpoint 后的固定 benchmark v2_50 复测，应与 adapter 推理一致。

@@ -17,13 +17,13 @@ data:
   return_raw_chat: true
   filter_overlong_prompts: true
   truncation: error
-  tool_config_path: ${oc.env:SHOPPING_GRPO_ROOT}/configs/verl/shop_tools.json
 
 actor_rollout_ref:
   model:
     path: ${oc.env:GRPO_MODEL_PATH}
     trust_remote_code: true
     enable_gradient_checkpointing: true
+    use_remove_padding: false
     lora_rank: 16
     lora_alpha: 32
     target_modules: all-linear
@@ -71,7 +71,6 @@ actor_rollout_ref:
       max_tool_response_length: 32768
       tool_response_truncate_side: right
       tool_config_path: ${oc.env:SHOPPING_GRPO_ROOT}/configs/verl/shop_tools.json
-      interaction_config_path: ${oc.env:SHOPPING_GRPO_ROOT}/configs/verl/shop_interaction.json
       tokenization_sanity_check_mode: ignore_strippable
     val_kwargs:
       n: 1

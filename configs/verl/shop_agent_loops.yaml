@@ -1,2 +1,5 @@
 - name: shopping_tool_agent
   _target_: shopping_grpo.verl_adapter.agent_loop.ShoppingToolAgentLoop
+  base_url: ${oc.env:SHOPSIM_BASE_URL,http://127.0.0.1:5700}
+  timeout: 60
+  max_steps: 35

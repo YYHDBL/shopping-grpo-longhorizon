@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
-"""Fail fast on the veRL APIs required by the Shopping GRPO adapter."""
+"""在加载模型前拒绝污染或版本不匹配的 GRPO 环境。"""
 
 from __future__ import annotations
 
 import os
+import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+
+
+EXPECTED_VERSIONS = {
+    "verl": "0.8.0",
+    "vllm": "0.25.1",
+    "torch": "2.11.0",
+    "transformers": "5.11.0",
+    "ray": "2.56.1",
+    "tensordict": "0.10.0",
+}
 
 
 def main():
@@ -16,27 +28,53 @@ def main():
     if missing:
         raise SystemExit("missing GRPO parquet file(s): " + ", ".join(missing))
 
+    if sys.version_info[:2] != (3, 12):
+        raise SystemExit(f"incompatible Python: expected 3.12, got {sys.version.split()[0]}")
+
+    installed = {}
+    for package, expected in EXPECTED_VERSIONS.items():
+        try:
+            installed[package] = version(package)
+        except PackageNotFoundError as exc:
+            raise SystemExit(f"missing GRPO dependency: {package}=={expected}") from exc
+        if installed[package].split("+", 1)[0] != expected:
+            raise SystemExit(
+                f"incompatible GRPO dependency: expected {package}=={expected}, got {installed[package]}"
+            )
+
     try:
+        import torch
+        import verl
         from verl.experimental.agent_loop.tool_parser import ToolParser
         from verl.experimental.agent_loop.tool_agent_loop import AgentState, ToolAgentLoop
-        from verl.interactions.utils.interaction_registry import initialize_interactions_from_config
         from shopping_grpo.verl_adapter.agent_loop import ShoppingToolAgentLoop
+        from shopping_grpo.verl_adapter.tools import ShopSimulatorTool
+        from verl.tools.base_tool import BaseTool
     except ImportError as exc:
         raise SystemExit(
-            "incompatible veRL install: async ToolAgentLoop APIs are unavailable; "
+            "incompatible veRL 0.8 install: required AgentLoop/Tool APIs are unavailable; "
             f"original error: {exc}"
         ) from exc
 
+    verl_source = Path(verl.__file__).resolve()
+    if "agentic-grpo-longhorizon" in str(verl_source):
+        raise SystemExit(f"reference veRL fork is shadowing pip veRL 0.8: {verl_source}")
+    if not torch.cuda.is_available():
+        raise SystemExit("CUDA is unavailable in the GRPO environment")
     if (
         not issubclass(ShoppingToolAgentLoop, ToolAgentLoop)
+        or not issubclass(ShopSimulatorTool, BaseTool)
         or AgentState.TERMINATED.value != "terminated"
-        or not hasattr(ToolAgentLoop, "_handle_interacting_state")
-        or not callable(initialize_interactions_from_config)
+        or not hasattr(ToolAgentLoop, "_handle_processing_tools_state")
     ):
         raise SystemExit("incompatible veRL ToolAgentLoop lifecycle API")
     if "qwen3_coder" not in ToolParser._registry:
-        raise SystemExit("shopping qwen3_coder parser was not registered")
-    print("GRPO runtime preflight passed: datasets, veRL AgentLoop, parser")
+        raise SystemExit("veRL 0.8 built-in qwen3_coder parser is unavailable")
+    print(
+        "GRPO runtime preflight passed: "
+        + ", ".join(f"{name}={value}" for name, value in installed.items())
+        + f", source={verl_source}"
+    )
 
 
 if __name__ == "__main__":
