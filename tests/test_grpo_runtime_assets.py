@@ -19,6 +19,7 @@ class GrpoRuntimeAssetsTest(unittest.TestCase):
         self.assertIn("format: qwen3_coder", config)
         self.assertIn("default_agent_loop: shopping_tool_agent", config)
         self.assertIn("use_remove_padding: false", config)
+        self.assertIn("lora:\n      merge: true", config)
         self.assertIn("reward_model:\n  enable: false", config)
         self.assertNotIn("interaction_config_path", config)
         self.assertNotIn("prm", config.casefold())
@@ -32,12 +33,20 @@ class GrpoRuntimeAssetsTest(unittest.TestCase):
         self.assertNotIn("agentic-grpo-longhorizon", content)
         self.assertNotIn("shop_interaction.json", content)
 
+    def test_runtime_setup_applies_the_numpy_override(self):
+        setup = (ROOT / "docs/grpo-runtime-setup.md").read_text(encoding="utf-8")
+        self.assertIn("--override requirements-grpo-overrides.txt", setup)
+        self.assertNotIn("uv pip check", setup)
+
     def test_grpo_dependencies_pin_the_supported_runtime(self):
         requirements = (ROOT / "requirements-grpo.txt").read_text(encoding="utf-8")
         self.assertIn("verl==0.8.0", requirements)
         self.assertIn("vllm==0.25.1", requirements)
         self.assertIn("transformers==5.11.0", requirements)
         self.assertIn("tensordict==0.10.0", requirements)
+        self.assertIn("numpy==2.2.6", requirements)
+        override = (ROOT / "requirements-grpo-overrides.txt").read_text(encoding="utf-8")
+        self.assertEqual(override.strip(), "numpy==2.2.6")
 
 
 if __name__ == "__main__":  # pragma: no cover

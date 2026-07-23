@@ -7,4 +7,4 @@ torchaudio==2.11.0
 transformers==5.11.0
 ray[default]==2.56.1
 tensordict==0.10.0
-numpy==1.26.4
+numpy==2.2.6

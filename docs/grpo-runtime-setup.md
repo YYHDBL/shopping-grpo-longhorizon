@@ -13,8 +13,11 @@
 | Transformers | 5.11.0 | 支持 Qwen3.5，同时避开 veRL 后续已标记的不兼容版本 |
 | Ray | 2.56.1 | 满足 veRL 0.8，固定当前稳定版本 |
 | TensorDict | 0.10.0 | veRL 0.8 支持范围的最高版本 |
+| NumPy | 2.2.6 | vLLM 0.25.1 的 OpenCV 依赖要求 NumPy 2 |
 
 不要安装 `verl[vllm]`。veRL 0.8 的这个 extra 仍声明旧的 `vllm<=0.12.0`，会把 Qwen3.5 所需的新 vLLM 降级。项目改为安装 `verl==0.8.0` 核心包和独立固定的 `vllm==0.25.1`。
+
+veRL 0.8 的包元数据还声明 `numpy<2`，但上游源码已更新为 `numpy>=2`。安装时使用项目内的 override 文件覆盖这条过期约束；不要手工拆包或修改 site-packages。
 
 ## 2. 拉取本项目并新建干净环境
 
@@ -34,10 +37,10 @@ uv venv --python 3.12 .venv-grpo-v080
 uv pip install \
   --python .venv-grpo-v080/bin/python \
   --torch-backend=auto \
-  -r requirements-grpo.txt
+  -r requirements-grpo.txt \
+  --override requirements-grpo-overrides.txt
 
 source .venv-grpo-v080/bin/activate
-uv pip check
 ```
 
 禁止执行下面几类操作：
@@ -55,7 +58,7 @@ from importlib.metadata import version
 from pathlib import Path
 import verl
 
-for name in ("verl", "vllm", "torch", "transformers", "ray", "tensordict"):
+for name in ("verl", "vllm", "torch", "transformers", "ray", "tensordict", "numpy"):
     print(f"{name}={version(name)}")
 print("verl_source=", Path(verl.__file__).resolve())
 PY
@@ -70,11 +73,14 @@ torch=2.11.0
 transformers=5.11.0
 ray=2.56.1
 tensordict=0.10.0
+numpy=2.2.6
 ```
 
 `verl_source` 必须位于 `.venv-grpo-v080/.../site-packages/verl`，不得出现 `agentic-grpo-longhorizon`。
 
 项目配置显式关闭 `use_remove_padding`。当前 Qwen3.5 + SDPA 路线不依赖另行编译的 FlashAttention 2，避免重复 SFT 阶段的 CUDA 编译问题。
+
+项目还启用了 `model.lora.merge=true`：训练参数仍然只有 LoRA，但 rollout 前临时把 LoRA 合入基座再同步标准权重。这样可避开 Qwen3.5 在 vLLM 原生 LoRA 权重同步中的 `base_layer` 命名不兼容。
 
 ## 4. 启动并验证 ShopSimulator
 
@@ -146,7 +152,7 @@ bash scripts/run_vanilla_grpo.sh \
 4. 正常、异常、超步数和模型提前结束后，8 个环境租约都被释放；
 5. veRL 完成 1 次 policy update 后正常退出，无 HTTP 400、环境槽耗尽或旧 fork 导入。
 
-若失败，保留完整 traceback、`pip check` 输出、上面的版本与 `verl_source` 输出，不要现场手改 site-packages。
+若失败，保留完整 traceback、上面的版本与 `verl_source` 输出，不要现场手改 site-packages。
 
 ## 7. 为什么不再使用 `verl.interactions`
 

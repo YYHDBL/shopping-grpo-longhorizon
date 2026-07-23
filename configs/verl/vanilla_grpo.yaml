@@ -27,6 +27,9 @@ actor_rollout_ref:
     lora_rank: 16
     lora_alpha: 32
     target_modules: all-linear
+    # rollout 同步标准权重，避开 Qwen3.5 原生 LoRA 的 base_layer 命名不兼容。
+    lora:
+      merge: true
     override_config:
       attn_implementation: sdpa
   actor:

@@ -16,6 +16,7 @@ EXPECTED_VERSIONS = {
     "transformers": "5.11.0",
     "ray": "2.56.1",
     "tensordict": "0.10.0",
+    "numpy": "2.2.6",
 }
 
 
