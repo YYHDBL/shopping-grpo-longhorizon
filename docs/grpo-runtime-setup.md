@@ -82,6 +82,8 @@ numpy=2.2.6
 
 项目还启用了 `model.lora.merge=true`：训练参数仍然只有 LoRA，但 rollout 前临时把 LoRA 合入基座再同步标准权重。这样可避开 Qwen3.5 在 vLLM 原生 LoRA 权重同步中的 `base_layer` 命名不兼容。
 
+veRL 0.8 在 old-log-prob 前处理阶段仍会无条件导入 `flash_attn.bert_padding`，即使 `use_remove_padding=false`。项目通过 Ray worker setup hook 复用 veRL 已内置的纯 PyTorch padding 实现；这只替换索引和 padding 工具，模型 attention 仍使用 SDPA，不需要安装 FlashAttention。
+
 ## 4. 启动并验证 ShopSimulator
 
 ShopSimulator 继续使用它自己的 Python 3.10 环境。GRPO 的默认批次是 `2 prompt × 4 rollout`，所以必须初始化至少 8 个环境槽：

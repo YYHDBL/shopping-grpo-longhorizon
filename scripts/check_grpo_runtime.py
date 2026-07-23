@@ -50,6 +50,7 @@ def main():
         from verl.experimental.agent_loop.tool_agent_loop import AgentState, ToolAgentLoop
         from shopping_grpo.verl_adapter.agent_loop import ShoppingToolAgentLoop
         from shopping_grpo.verl_adapter.tools import ShopSimulatorTool
+        from shopping_grpo.verl_compat import install_torch_padding_fallback
         from verl.tools.base_tool import BaseTool
     except ImportError as exc:
         raise SystemExit(
@@ -71,6 +72,7 @@ def main():
         raise SystemExit("incompatible veRL ToolAgentLoop lifecycle API")
     if "qwen3_coder" not in ToolParser._registry:
         raise SystemExit("veRL 0.8 built-in qwen3_coder parser is unavailable")
+    install_torch_padding_fallback()
     print(
         "GRPO runtime preflight passed: "
         + ", ".join(f"{name}={value}" for name, value in installed.items())

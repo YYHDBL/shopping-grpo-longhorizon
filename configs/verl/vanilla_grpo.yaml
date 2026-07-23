@@ -95,6 +95,11 @@ algorithm:
 reward_model:
   enable: false
 
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      worker_process_setup_hook: shopping_grpo.verl_compat.install_torch_padding_fallback
+
 trainer:
   total_epochs: 50
   total_training_steps: 500
