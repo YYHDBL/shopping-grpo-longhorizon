@@ -20,6 +20,11 @@ class GrpoRuntimeAssetsTest(unittest.TestCase):
         self.assertIn("default_agent_loop: shopping_tool_agent", config)
         self.assertIn("use_remove_padding: false", config)
         self.assertIn("lora:\n      merge: true", config)
+        self.assertIn("calculate_log_probs: true", config)
+        self.assertIn("bypass_mode: true", config)
+        self.assertIn("rollout_is: null", config)
+        self.assertIn("rollout_rs: null", config)
+        self.assertIn("loss_type: ppo_clip", config)
         self.assertIn(
             "worker_process_setup_hook: shopping_grpo.verl_compat.install_torch_padding_fallback",
             config,

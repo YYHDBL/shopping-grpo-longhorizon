@@ -60,7 +60,8 @@ actor_rollout_ref:
     max_model_len: 28672
     max_num_batched_tokens: 28672
     free_cache_engine: true
-    calculate_log_probs: false
+    # 直接保留 vLLM rollout policy 的 log-prob，供 PPO bypass mode 使用。
+    calculate_log_probs: true
     agent:
       num_workers: 8
       default_agent_loop: shopping_tool_agent
@@ -91,6 +92,12 @@ algorithm:
   adv_estimator: grpo
   use_kl_in_reward: false
   norm_adv_by_std_in_grpo: true
+  rollout_correction:
+    # 以实际 rollout policy 作为 PPO old policy，跳过 actor old-log-prob 重算。
+    bypass_mode: true
+    rollout_is: null
+    rollout_rs: null
+    loss_type: ppo_clip
 
 reward_model:
   enable: false
