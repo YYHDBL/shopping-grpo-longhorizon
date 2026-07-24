@@ -1,0 +1,128 @@
+# Minimal environment-reward-only GRPO baseline for Qwen3.5-2B + ShopSimulator.
+hydra:
+  searchpath:
+    - pkg://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  train_files: ${oc.env:GRPO_TRAIN_FILE}
+  val_files: ${oc.env:GRPO_VAL_FILE}
+  train_batch_size: 2
+  val_batch_size: 2
+  max_prompt_length: 4096
+  max_response_length: 24576
+  return_raw_chat: true
+  filter_overlong_prompts: true
+  truncation: error
+
+actor_rollout_ref:
+  model:
+    path: ${oc.env:GRPO_MODEL_PATH}
+    trust_remote_code: true
+    enable_gradient_checkpointing: true
+    use_remove_padding: false
+    lora_rank: 16
+    lora_alpha: 32
+    target_modules: all-linear
+    # rollout 同步标准权重，避开 Qwen3.5 原生 LoRA 的 base_layer 命名不兼容。
+    lora:
+      merge: true
+    override_config:
+      attn_implementation: sdpa
+  actor:
+    ppo_mini_batch_size: 2
+    ppo_micro_batch_size_per_gpu: 1
+    ppo_max_token_len_per_gpu: 28672
+    use_dynamic_bsz: true
+    freeze_vision_tower: true
+    entropy_coeff: 0.0
+    use_kl_loss: true
+    kl_loss_coef: 0.001
+    kl_loss_type: low_var_kl
+    optim:
+      lr: 1.0e-6
+      lr_warmup_steps_ratio: 0.03
+    fsdp_config:
+      optimizer_offload: true
+      param_offload: true
+  rollout:
+    name: vllm
+    mode: async
+    n: 4
+    temperature: 0.7
+    top_p: 0.9
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.45
+    max_num_seqs: 8
+    max_model_len: 28672
+    max_num_batched_tokens: 28672
+    free_cache_engine: true
+    # 直接保留 vLLM rollout policy 的 log-prob，供 PPO bypass mode 使用。
+    calculate_log_probs: true
+    agent:
+      num_workers: 8
+      default_agent_loop: shopping_tool_agent
+      agent_loop_config_path: ${oc.env:SHOPPING_GRPO_ROOT}/configs/verl/shop_agent_loops.yaml
+    multi_turn:
+      enable: true
+      format: qwen3_coder
+      max_user_turns: 40
+      max_assistant_turns: 40
+      max_parallel_calls: 1
+      max_tool_response_length: 32768
+      tool_response_truncate_side: right
+      tool_config_path: ${oc.env:SHOPPING_GRPO_ROOT}/configs/verl/shop_tools.json
+      tokenization_sanity_check_mode: ignore_strippable
+    val_kwargs:
+      n: 1
+      temperature: 0.0
+      top_p: 1.0
+      do_sample: false
+  ref:
+    log_prob_micro_batch_size_per_gpu: 1
+    log_prob_max_token_len_per_gpu: 28672
+    log_prob_use_dynamic_bsz: true
+    fsdp_config:
+      param_offload: true
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+  norm_adv_by_std_in_grpo: true
+  rollout_correction:
+    # 以实际 rollout policy 作为 PPO old policy，跳过 actor old-log-prob 重算。
+    bypass_mode: true
+    rollout_is: null
+    rollout_rs: null
+    loss_type: ppo_clip
+
+# Project-side bounded filtering only; disabled unless explicitly enabled for a run.
+shopping_dynamic_sampling:
+  enable: false
+  metric: seq_reward
+  max_num_gen_batches: 3
+  reward_tolerance: 1.0e-8
+
+reward_model:
+  enable: false
+
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      worker_process_setup_hook: shopping_grpo.verl_compat.install_torch_padding_fallback
+
+trainer:
+  total_epochs: 50
+  total_training_steps: 500
+  save_freq: 50
+  test_freq: 50
+  val_before_train: true
+  logger: [console]
+  project_name: shopping-grpo
+  experiment_name: vanilla-grpo-v1
+  default_local_dir: ${oc.env:GRPO_OUTPUT_DIR}
+  n_gpus_per_node: 1
+  nnodes: 1

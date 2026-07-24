@@ -1,0 +1,10 @@
+# Qwen3.5 需要新版 vLLM；不要安装 verl[vllm]，其旧上限会降级 vLLM。
+verl==0.8.0
+vllm==0.25.1
+torch==2.11.0
+torchvision==0.26.0
+torchaudio==2.11.0
+transformers==5.11.0
+ray[default]==2.56.1
+tensordict==0.10.0
+numpy==2.2.6

@@ -1,0 +1,27 @@
+{
+  "total": 317,
+  "accepted": 100,
+  "rejected": 217,
+  "reject_reasons": {
+    "environment_not_done": 210,
+    "has_error": 12,
+    "missing_buy": 210,
+    "reward_detail.r_option_not_1": 6,
+    "reward_detail_incomplete": 210,
+    "status_not_done": 210,
+    "step_10.action_after_option_selection": 1,
+    "step_11.action_after_option_selection": 1,
+    "step_12.action_after_option_selection": 1,
+    "step_13.action_after_option_selection": 1,
+    "step_14.action_after_option_selection": 1,
+    "step_3.action_after_option_selection": 2,
+    "step_4.action_after_option_selection": 2,
+    "step_5.action_after_option_selection": 2,
+    "step_6.action_after_option_selection": 2,
+    "step_7.action_after_option_selection": 1,
+    "step_8.action_after_option_selection": 1,
+    "step_9.action_after_option_selection": 1,
+    "trajectory_not_done": 210
+  },
+  "retain_teacher_reasoning": false
+}

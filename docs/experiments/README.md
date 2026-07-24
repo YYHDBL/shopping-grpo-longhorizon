@@ -11,6 +11,8 @@
 | 02 | [LoRA SFT v1：首轮冷启动](02-sft-v1-pitfalls-2026-07-20.md) | 已完成首轮 | 12K Full-CoT SFT 首次达到约 5% 严格成功率，同时暴露长上下文 OOM 与长轨迹问题 |
 | 03 | [SFT v2：显存实验与 Action-only 决策](03-sft-v2-memory-and-action-only-2026-07-20.md) | 已完成 | Liger + SDPA + Action-only；benchmark v2_50 严格成功率 12% |
 | 04 | [Vanilla GRPO v1：任务冻结与 veRL 接入准备](04-vanilla-grpo-v1-preparation-2026-07-21.md) | 准备完成 | 50 条评测、2,000 条 probe 候选池、veRL 最小适配层与 SFT 合并入口 |
+| 05 | [GRPO 运行时与任务适配踩坑实录](05-grpo-runtime-and-task-adaptation-pitfalls-2026-07-23.md) | 8 条 rollout 已通过，更新修复待实测 | veRL 0.8、vLLM 0.25.1、ShopSimulator 租约、LoRA 权重同步与 padding fallback |
+| 06 | [veRL 0.8 Vanilla GRPO 的有限 reward-group 动态采样](06-verl-080-bounded-dynamic-sampling-2026-07-23.md) | CPU 实现完成，GPU signal smoke 待运行 | 固定 wheel 窄补丁、常量 reward group 过滤、最多 3 批补采 |
 
 ## 尚未启动：先放模板，禁止预填结果
 

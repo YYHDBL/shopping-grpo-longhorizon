@@ -25,7 +25,6 @@ def build_verl_record(task_id: int, user_instruction: str, split: str, index: in
             "split": split,
             "index": int(index),
             "task_id": int(task_id),
-            "interaction_kwargs": {"name": "shopsimulator", "task_id": int(task_id)},
         },
     }
 

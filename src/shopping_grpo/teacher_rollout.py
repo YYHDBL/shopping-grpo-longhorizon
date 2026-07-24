@@ -324,17 +324,19 @@ def collect_tasks(
             written.append(trajectory)
             if _is_infrastructure_failure(trajectory):
                 raise CollectionInfrastructureError(
-                    "ShopSimulator infrastructure failure; collection stopped before the next task"
+                    "collection infrastructure failure; stopped before the next task"
                 )
     return written
 
 
 def _is_infrastructure_failure(trajectory):
-    """只在环境不可用或租约未释放时中断；普通任务失败仍保留并继续。"""
+    """环境或模型服务不可用时中断；普通任务失败仍保留并继续。"""
     if trajectory.get("release_error"):
         return True
     error = trajectory.get("error") or {}
     error_type = error.get("type")
+    if error_type in {URLError.__name__, RemoteDisconnected.__name__, TimeoutError.__name__}:
+        return True
     if error_type == ShopHttpError.__name__:
         return True
     return (

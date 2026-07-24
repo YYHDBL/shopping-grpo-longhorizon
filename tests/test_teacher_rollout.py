@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from http.client import RemoteDisconnected
 from pathlib import Path
+from urllib.error import URLError
 from unittest.mock import patch
 
 from shopping_grpo.action_validation import action_guard_tool_message
@@ -502,6 +503,29 @@ class TeacherRolloutTest(unittest.TestCase):
 
         self.assertEqual([row["task_id"] for row in rows], [1])
         self.assertEqual(rows[0]["error"]["type"], "ShopEnvironmentError")
+
+    def test_collect_tasks_stops_after_model_api_is_unreachable(self):
+        """模型 API 重试后仍断线时，不能把后续 task 批量记成失败。"""
+        class DisconnectedClient:
+            def complete(self, messages, tools):
+                raise URLError("Remote end closed connection without response")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "raw.jsonl"
+
+            with self.assertRaises(CollectionInfrastructureError):
+                collect_tasks(
+                    [{"task_id": 1}, {"task_id": 2}],
+                    client=DisconnectedClient(),
+                    output_path=output,
+                    base_url="http://shop.test",
+                    env_factory=FakeEnv,
+                )
+
+            rows = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual([row["task_id"] for row in rows], [1])
+        self.assertEqual(rows[0]["error"]["type"], "URLError")
 
     def test_collect_for_task_serializes_multiple_tool_calls_before_execution(self):
         client = MockClient(
