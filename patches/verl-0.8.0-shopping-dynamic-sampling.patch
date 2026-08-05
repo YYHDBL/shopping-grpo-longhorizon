@@ -464,3 +464,19 @@
 +                    )
 +                if not dynamic_sampling_enabled:
 +                    self.global_steps += 1
+--- a/verl/tools/schemas.py
++++ b/verl/tools/schemas.py
+@@ -19,0 +20 @@
++# SHOPPING_GRPO_STRICT_TOOL_SCHEMA_PATCH_V1
+@@ -20,0 +22 @@
++
+@@ -29,0 +32,7 @@
++    # Preserve the JSON-Schema constraints used by strict shopping tools.
++    items: "OpenAIFunctionPropertySchema | None" = None
++    minItems: int | None = None
++    maxItems: int | None = None
++    uniqueItems: bool | None = None
++    minLength: int | None = None
++    maxLength: int | None = None
+@@ -38,0 +48 @@
++    additionalProperties: bool | None = None

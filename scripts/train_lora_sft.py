@@ -34,6 +34,11 @@ def parse_args():
     parser.add_argument("--output", type=Path, required=True, help="LoRA adapter 输出目录")
     # 24k 可保留当前真实轨迹的约 93%，48G 显存配合 batch=1 与梯度检查点可稳定训练。
     parser.add_argument("--max-length", type=int, default=24576)
+    parser.add_argument(
+        "--reject-dropped-samples",
+        action="store_true",
+        help="在目标 tokenizer/template 拒绝任一样本时终止；Feed 课程训练应启用。",
+    )
     parser.add_argument("--epochs", type=float, default=3)
     parser.add_argument("--per-device-train-batch-size", type=int, default=1)
     parser.add_argument("--per-device-eval-batch-size", type=int, default=1)
@@ -119,6 +124,16 @@ def _training_dependencies():
         TrainerCallback,
         TrainingArguments,
     )
+
+
+def _enforce_sample_retention(stats, *, label, enabled):
+    """Fail before model loading when a strict curriculum loses any row."""
+
+    if enabled and int(stats.get("dropped", 0)):
+        raise SystemExit(
+            f"{label} 有 {int(stats['dropped'])}/{int(stats.get('total', 0))} "
+            "条样本被目标 tokenizer/chat template 拒绝；请降低窗口预算或提高 --max-length"
+        )
 
 
 def _model_load_kwargs(args, dtype, bits_and_bytes_config):
@@ -378,6 +393,11 @@ def main():
         max_length=args.max_length,
     )
     print("train_data=", train_stats)
+    _enforce_sample_retention(
+        train_stats,
+        label="训练集",
+        enabled=args.reject_dropped_samples,
+    )
     if not train_examples:
         raise SystemExit("训练集没有可用样本；请检查 data/sft/ 中的 JSONL 格式")
     validation_examples = []
@@ -389,6 +409,11 @@ def main():
             max_length=args.max_length,
         )
         print("validation_data=", validation_stats)
+        _enforce_sample_retention(
+            validation_stats,
+            label="验证集",
+            enabled=args.reject_dropped_samples,
+        )
         if not validation_examples:
             raise SystemExit("验证集没有可用样本；请调整划分或 --max-length")
 

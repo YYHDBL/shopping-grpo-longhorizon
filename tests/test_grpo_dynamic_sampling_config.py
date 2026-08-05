@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.check_grpo_runtime import (
     PATCH_MARKER,
+    STRICT_TOOL_SCHEMA_PATCH_MARKER,
     compose_runtime_config,
     validate_dynamic_sampling,
     validate_training_memory_budget,
@@ -79,13 +80,23 @@ class DynamicSamplingConfigTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             verl_source = Path(temp_dir) / "verl" / "__init__.py"
             trainer_source = verl_source.parent / "trainer" / "ppo" / "ray_trainer.py"
+            schemas_source = verl_source.parent / "tools" / "schemas.py"
             trainer_source.parent.mkdir(parents=True)
+            schemas_source.parent.mkdir(parents=True)
             verl_source.write_text("", encoding="utf-8")
+            schemas_source.write_text("# unpatched\n", encoding="utf-8")
             trainer_source.write_text("# unpatched\n", encoding="utf-8")
             with self.assertRaisesRegex(SystemExit, "patch marker is missing"):
                 validate_dynamic_sampling(config, verl_source, {"verl": "0.8.0"})
 
             trainer_source.write_text(f"# {PATCH_MARKER}\n", encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "tool-schema patch marker"):
+                validate_dynamic_sampling(config, verl_source, {"verl": "0.8.0"})
+
+            schemas_source.write_text(
+                f"# {STRICT_TOOL_SCHEMA_PATCH_MARKER}\n",
+                encoding="utf-8",
+            )
             validate_dynamic_sampling(config, verl_source, {"verl": "0.8.0"})
 
 

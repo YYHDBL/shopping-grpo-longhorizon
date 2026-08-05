@@ -1,0 +1,28 @@
+# Feed POMDP AgentLoop profile for veRL 0.8.
+#
+# IMPORTANT: credit_mode selects evaluator metadata.  Vanilla veRL 0.8 still
+# consumes only FeedToolAgentLoop.output.reward_score (the terminal scalar) for
+# GRPO advantages; it does not consume response_credit_vector without a separate
+# trainer-side patch.
+- name: feed_tool_agent
+  _target_: shopping_grpo.feed.verl_adapter.FeedToolAgentLoop
+  credit_mode: ${oc.env:FEED_CREDIT_MODE,terminal}
+  credit_gamma: 0.99
+  min_feed_steps: 24
+  max_feed_steps: 48
+  max_info_calls_per_video: 3
+  required_environment_version: feed-environment-v1
+  required_observation_version: feed-observation-v1
+  required_tools_version: feed-tools-v1
+  required_reward_version: feed-reward-v1
+  catalog_path: ${oc.env:FEED_CATALOG_PATH,null}
+  # 24--48 videos can require 128+ single-tool turns.  Tool parallelism remains
+  # disabled in feed_grpo.yaml, and the loop rejects rather than truncates a
+  # model response containing multiple calls.
+  expected_min_turn_capacity: 256
+  context_window_tokens: 65536
+  # Tool replies carry only public results and mutable state deltas.  Repeating
+  # the full observation at every turn creates quadratic transcript growth.
+  tool_payload_version: feed-tool-delta-v1
+  process_credit_metadata_only: true
+  native_advantage_integration: false

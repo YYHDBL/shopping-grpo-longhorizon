@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import torch
@@ -39,10 +41,33 @@ def original_source() -> Path:
     return backup
 
 
+def original_schemas_source() -> Path:
+    installed = patcher.resolve_installed_targets()[1]
+    if file_sha256(installed) == patcher.EXPECTED_ORIGINAL_SCHEMAS_SHA256:
+        return installed
+    backup = Path(str(installed) + patcher.BACKUP_SUFFIX)
+    if file_sha256(backup) != patcher.EXPECTED_ORIGINAL_SCHEMAS_SHA256:
+        raise AssertionError("installed veRL schemas and its backup are not the pinned original")
+    return backup
+
+
 class VerlPatchScriptTest(unittest.TestCase):
-    def run_script(self, target: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    def run_script(
+        self,
+        target: Path,
+        schemas_target: Path,
+        *args: str,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(SCRIPT), "--target", str(target), *args],
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--target",
+                str(target),
+                "--schemas-target",
+                str(schemas_target),
+                *args,
+            ],
             cwd=ROOT,
             text=True,
             capture_output=True,
@@ -52,40 +77,257 @@ class VerlPatchScriptTest(unittest.TestCase):
     def test_apply_is_idempotent_and_restore_recovers_original(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "ray_trainer.py"
+            schemas_target = Path(temp_dir) / "schemas.py"
             shutil.copy2(original_source(), target)
+            shutil.copy2(original_schemas_source(), schemas_target)
 
-            first = self.run_script(target)
+            first = self.run_script(target, schemas_target)
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(file_sha256(target), patcher.EXPECTED_PATCHED_SHA256)
+            self.assertEqual(
+                file_sha256(schemas_target),
+                patcher.EXPECTED_PATCHED_SCHEMAS_SHA256,
+            )
             self.assertIn(patcher.PATCH_MARKER, target.read_text(encoding="utf-8"))
+            self.assertIn(
+                patcher.STRICT_TOOL_SCHEMA_PATCH_MARKER,
+                schemas_target.read_text(encoding="utf-8"),
+            )
 
-            second = self.run_script(target)
+            second = self.run_script(target, schemas_target)
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertIn("already applied", second.stdout)
             self.assertEqual(file_sha256(target), patcher.EXPECTED_PATCHED_SHA256)
+            self.assertEqual(
+                file_sha256(schemas_target),
+                patcher.EXPECTED_PATCHED_SCHEMAS_SHA256,
+            )
 
-            restored = self.run_script(target, "--restore")
+            restored = self.run_script(target, schemas_target, "--restore")
             self.assertEqual(restored.returncode, 0, restored.stderr)
             self.assertEqual(file_sha256(target), patcher.EXPECTED_ORIGINAL_SHA256)
+            self.assertEqual(
+                file_sha256(schemas_target),
+                patcher.EXPECTED_ORIGINAL_SCHEMAS_SHA256,
+            )
 
     def test_unknown_sha256_is_rejected_without_modification(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "ray_trainer.py"
+            schemas_target = Path(temp_dir) / "schemas.py"
             shutil.copy2(original_source(), target)
-            target.write_text(target.read_text(encoding="utf-8") + "\n# unknown change\n", encoding="utf-8")
+            shutil.copy2(original_schemas_source(), schemas_target)
+            target.write_text(
+                target.read_text(encoding="utf-8") + "\n# unknown change\n",
+                encoding="utf-8",
+            )
             before = file_sha256(target)
 
-            result = self.run_script(target)
+            result = self.run_script(target, schemas_target)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("refusing to patch unknown ray_trainer.py", result.stderr)
             self.assertEqual(file_sha256(target), before)
+            self.assertEqual(
+                file_sha256(schemas_target),
+                patcher.EXPECTED_ORIGINAL_SCHEMAS_SHA256,
+            )
             self.assertFalse(Path(str(target) + patcher.BACKUP_SUFFIX).exists())
+            self.assertFalse(Path(str(schemas_target) + patcher.BACKUP_SUFFIX).exists())
+
+    def test_apply_failure_rolls_back_both_targets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "ray_trainer.py"
+            schemas_target = Path(temp_dir) / "schemas.py"
+            shutil.copy2(original_source(), target)
+            shutil.copy2(original_schemas_source(), schemas_target)
+            real_apply_file_section = patcher._apply_file_section
+
+            def fail_on_schemas(patch_program, patch_target, relative_path, temporary):
+                if relative_path == patcher.SCHEMAS_RELATIVE_PATH:
+                    raise RuntimeError("injected schemas patch failure")
+                return real_apply_file_section(
+                    patch_program,
+                    patch_target,
+                    relative_path,
+                    temporary,
+                )
+
+            with mock.patch.object(
+                patcher,
+                "_apply_file_section",
+                side_effect=fail_on_schemas,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "injected schemas patch failure"):
+                    patcher.apply_patch(target, schemas_target)
+
+            self.assertEqual(file_sha256(target), patcher.EXPECTED_ORIGINAL_SHA256)
+            self.assertEqual(
+                file_sha256(schemas_target),
+                patcher.EXPECTED_ORIGINAL_SCHEMAS_SHA256,
+            )
+            self.assertEqual(
+                file_sha256(Path(str(target) + patcher.BACKUP_SUFFIX)),
+                patcher.EXPECTED_ORIGINAL_SHA256,
+            )
+            self.assertEqual(
+                file_sha256(Path(str(schemas_target) + patcher.BACKUP_SUFFIX)),
+                patcher.EXPECTED_ORIGINAL_SCHEMAS_SHA256,
+            )
+
+    def test_apply_migrates_old_trainer_only_patch_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temporary = Path(temp_dir)
+            target = temporary / "ray_trainer.py"
+            schemas_target = temporary / "schemas.py"
+            shutil.copy2(original_source(), target)
+            shutil.copy2(original_schemas_source(), schemas_target)
+            patcher._ensure_backup(target, patcher.EXPECTED_ORIGINAL_SHA256)
+            patch_program = shutil.which("patch")
+            self.assertIsNotNone(patch_program)
+            patcher._apply_file_section(
+                patch_program,
+                target,
+                patcher.RAY_TRAINER_RELATIVE_PATH,
+                temporary,
+            )
+            self.assertEqual(file_sha256(target), patcher.EXPECTED_PATCHED_SHA256)
+            self.assertEqual(
+                file_sha256(schemas_target),
+                patcher.EXPECTED_ORIGINAL_SCHEMAS_SHA256,
+            )
+
+            patcher.apply_patch(target, schemas_target)
+            patcher.verify_patched(target, schemas_target)
+            patcher.restore_patch(target, schemas_target)
+            self.assertEqual(file_sha256(target), patcher.EXPECTED_ORIGINAL_SHA256)
+            self.assertEqual(
+                file_sha256(schemas_target),
+                patcher.EXPECTED_ORIGINAL_SCHEMAS_SHA256,
+            )
+
+    def test_restore_failure_rolls_back_both_targets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "ray_trainer.py"
+            schemas_target = Path(temp_dir) / "schemas.py"
+            shutil.copy2(original_source(), target)
+            shutil.copy2(original_schemas_source(), schemas_target)
+            patcher.apply_patch(target, schemas_target)
+
+            real_copy2 = shutil.copy2
+            schemas_backup = Path(str(schemas_target) + patcher.BACKUP_SUFFIX)
+
+            def fail_on_schemas_restore(source, destination, *args, **kwargs):
+                if (
+                    Path(source) == schemas_backup
+                    and Path(destination).name.endswith(".shopping-grpo-restore.tmp")
+                ):
+                    raise OSError("injected schemas restore failure")
+                return real_copy2(source, destination, *args, **kwargs)
+
+            with mock.patch.object(
+                patcher.shutil,
+                "copy2",
+                side_effect=fail_on_schemas_restore,
+            ):
+                with self.assertRaisesRegex(OSError, "injected schemas restore failure"):
+                    patcher.restore_patch(target, schemas_target)
+
+            self.assertEqual(file_sha256(target), patcher.EXPECTED_PATCHED_SHA256)
+            self.assertEqual(
+                file_sha256(schemas_target),
+                patcher.EXPECTED_PATCHED_SCHEMAS_SHA256,
+            )
+
+    def test_unknown_schemas_sha256_is_rejected_without_modification(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "ray_trainer.py"
+            schemas_target = Path(temp_dir) / "schemas.py"
+            shutil.copy2(original_source(), target)
+            shutil.copy2(original_schemas_source(), schemas_target)
+            schemas_target.write_text(
+                schemas_target.read_text(encoding="utf-8") + "\n# unknown change\n",
+                encoding="utf-8",
+            )
+            before = file_sha256(schemas_target)
+
+            result = self.run_script(target, schemas_target)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing to patch unknown schemas.py", result.stderr)
+            self.assertEqual(file_sha256(schemas_target), before)
+            self.assertEqual(file_sha256(target), patcher.EXPECTED_ORIGINAL_SHA256)
+            self.assertFalse(Path(str(target) + patcher.BACKUP_SUFFIX).exists())
+            self.assertFalse(Path(str(schemas_target) + patcher.BACKUP_SUFFIX).exists())
+
+    def test_schema_constraints_survive_validation_and_model_dump(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "ray_trainer.py"
+            schemas_target = Path(temp_dir) / "schemas.py"
+            shutil.copy2(original_source(), target)
+            shutil.copy2(original_schemas_source(), schemas_target)
+            result = self.run_script(target, schemas_target)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            spec = importlib.util.spec_from_file_location(
+                "patched_verl_tool_schemas",
+                schemas_target,
+            )
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            source_parameters = {
+                "type": "object",
+                "properties": {
+                    "groups": {
+                        "type": "array",
+                        "items": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64,
+                            },
+                            "minItems": 1,
+                            "maxItems": 2,
+                            "uniqueItems": True,
+                        },
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "uniqueItems": True,
+                    },
+                    "explanation": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                    },
+                },
+                "required": ["groups"],
+                "additionalProperties": False,
+            }
+            validated = module.OpenAIFunctionToolSchema.model_validate(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "strict_tool",
+                        "description": "Schema round-trip regression test.",
+                        "parameters": source_parameters,
+                    },
+                }
+            )
+            dumped_parameters = validated.model_dump(
+                exclude_unset=True,
+                exclude_none=True,
+            )["function"]["parameters"]
+            self.assertEqual(dumped_parameters, source_parameters)
 
     def test_patched_fit_preserves_bypass_and_defers_reference_and_update(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "ray_trainer.py"
+            schemas_target = Path(temp_dir) / "schemas.py"
             shutil.copy2(original_source(), target)
-            result = self.run_script(target)
+            shutil.copy2(original_schemas_source(), schemas_target)
+            result = self.run_script(target, schemas_target)
             self.assertEqual(result.returncode, 0, result.stderr)
 
             fit_source = target.read_text(encoding="utf-8").split("    def fit(self):", 1)[1]

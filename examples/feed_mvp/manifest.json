@@ -1,0 +1,248 @@
+{
+  "artifact_counts": {
+    "mixed_policy_logs": {
+      "test": 5,
+      "train": 5,
+      "validation": 5
+    },
+    "online_rl_tasks": {
+      "test": 1,
+      "train": 1,
+      "validation": 1
+    },
+    "preference_pairs": {
+      "test": 1,
+      "train": 1,
+      "validation": 1
+    },
+    "seeds": {
+      "test": 1,
+      "train": 1,
+      "validation": 1
+    },
+    "sft_trajectories": {
+      "test": 3,
+      "train": 3,
+      "validation": 3
+    }
+  },
+  "config": {
+    "artifact_counts": {
+      "mixed_policy_logs": {
+        "test": 5,
+        "train": 5,
+        "validation": 5
+      },
+      "online_rl_tasks": {
+        "test": 1,
+        "train": 1,
+        "validation": 1
+      },
+      "preference_pairs": {
+        "test": 1,
+        "train": 1,
+        "validation": 1
+      },
+      "seeds": {
+        "test": 1,
+        "train": 1,
+        "validation": 1
+      },
+      "sft_trajectories": {
+        "test": 3,
+        "train": 3,
+        "validation": 3
+      }
+    },
+    "behavior_calibration": null,
+    "behavior_policies": [
+      "Random",
+      "Popular",
+      "Similarity",
+      "Rule",
+      "Teacher"
+    ],
+    "curriculum_stage_counts": {
+      "test": {
+        "A_action_contract": 1,
+        "B_short_window": 1,
+        "C_long_horizon": 1
+      },
+      "train": {
+        "A_action_contract": 1,
+        "B_short_window": 1,
+        "C_long_horizon": 1
+      },
+      "validation": {
+        "A_action_contract": 1,
+        "B_short_window": 1,
+        "C_long_horizon": 1
+      }
+    },
+    "dataset_version": "feed-datasets-v1",
+    "episodes": 3,
+    "feed_length": 24,
+    "policy_source_counts": {
+      "shopping_grpo.feed.policies.PopularPolicy": 3,
+      "shopping_grpo.feed.policies.RandomPolicy": 3,
+      "shopping_grpo.feed.policies.RulePolicy": 3,
+      "shopping_grpo.feed.policies.SimilarityPolicy": 3,
+      "shopping_grpo.feed.policies.TeacherPolicy": 3
+    },
+    "prefer_external_policies": true,
+    "seed": 42,
+    "split_counts": {
+      "test": 1,
+      "train": 1,
+      "validation": 1
+    }
+  },
+  "curriculum_stage_counts": {
+    "test": {
+      "A_action_contract": 1,
+      "B_short_window": 1,
+      "C_long_horizon": 1
+    },
+    "train": {
+      "A_action_contract": 1,
+      "B_short_window": 1,
+      "C_long_horizon": 1
+    },
+    "validation": {
+      "A_action_contract": 1,
+      "B_short_window": 1,
+      "C_long_horizon": 1
+    }
+  },
+  "files": {
+    "mixed_policy_logs/test.jsonl": {
+      "bytes": 1492107,
+      "sha256": "9d1de665418983dc167b74d09b5753e597201b8aea0b38d92977758d53c14992"
+    },
+    "mixed_policy_logs/train.jsonl": {
+      "bytes": 1619168,
+      "sha256": "b467105b557e974aabf11de4ad728f460208c88742bd6020401e074c04881e6e"
+    },
+    "mixed_policy_logs/validation.jsonl": {
+      "bytes": 1566870,
+      "sha256": "87e338ff5ea538ecde3bda9c5273a2ce5d9b6409c34b6a0cfbb27c77fd4e9f1c"
+    },
+    "online_rl_tasks/test.jsonl": {
+      "bytes": 324572,
+      "sha256": "fce78be31ba8b7e0a19b98f111356409842bdbbc7b045b2b27d6b02aaf98917d"
+    },
+    "online_rl_tasks/train.jsonl": {
+      "bytes": 333718,
+      "sha256": "aa19cf33c46330d0fd2cfb21e8a7ae7ff2f5ecb79a22747e0fa2a8d284a49fcd"
+    },
+    "online_rl_tasks/validation.jsonl": {
+      "bytes": 341036,
+      "sha256": "97b59c3f1c8529e672c632045bf0671c24104edf49fd2dee04808b4208d1d9ba"
+    },
+    "preference_pairs/test.jsonl": {
+      "bytes": 20105,
+      "sha256": "028f653579b26bb672f5dd642fd62bb08f5690ebff422e2d98de6be4d16c61a6"
+    },
+    "preference_pairs/train.jsonl": {
+      "bytes": 21210,
+      "sha256": "a70d63f7f3ea8094574fef74e06bd67da15fe7440beecd472f815e4bea515e5c"
+    },
+    "preference_pairs/validation.jsonl": {
+      "bytes": 20480,
+      "sha256": "02d7c0f8f9225d59b466b12a553d62a4352fc6ede5884aeae7c1bc2fec27f237"
+    },
+    "seeds/test.jsonl": {
+      "bytes": 29136,
+      "sha256": "75f672bbbdb47e4cdf449709dd9fb55378d8a1e0d1a63a511a0e12b36ed09996"
+    },
+    "seeds/train.jsonl": {
+      "bytes": 31921,
+      "sha256": "25176458251233e9ab3bec1843a21c178edbde38e473b4e4d2cd4fc459c447bf"
+    },
+    "seeds/validation.jsonl": {
+      "bytes": 30408,
+      "sha256": "cdefdae990828b6b40028c460bc7232dc1e89436b8cbe44709d8b574d73a48e7"
+    },
+    "sft_trajectories/test.A_action_contract.jsonl": {
+      "bytes": 15729,
+      "sha256": "5e54093b32a0fd66e597c921229b664e219c95a0bbf1c569b0b3862cb1ebc2ed"
+    },
+    "sft_trajectories/test.B_short_window.jsonl": {
+      "bytes": 48098,
+      "sha256": "99ffcc244c1285f11e42dac6733842e8632da3c455f0adfec0ed84fdfe8e6dee"
+    },
+    "sft_trajectories/test.C_long_horizon.jsonl": {
+      "bytes": 126411,
+      "sha256": "7925941ac60384476e03b647c621355d93e678889df65b1a6f8c8453a17352b1"
+    },
+    "sft_trajectories/test.jsonl": {
+      "bytes": 190238,
+      "sha256": "1cb625d4168d0df7a7d410591d8294925f6112cb8b35052b3a644ae9c63d8d95"
+    },
+    "sft_trajectories/train.A_action_contract.jsonl": {
+      "bytes": 17174,
+      "sha256": "bad68ff44ca611a1208a15d303fc17dc2514fa8adc8b168410f3af2ffe9836ba"
+    },
+    "sft_trajectories/train.B_short_window.jsonl": {
+      "bytes": 52080,
+      "sha256": "2d4bd38bfc1a398c7c8fa2e5bda81b5566b838eb94f01b18d9f82c6f7a06b55b"
+    },
+    "sft_trajectories/train.C_long_horizon.jsonl": {
+      "bytes": 127383,
+      "sha256": "9eb55be5a82405055565a4c231672ab131681914758c0b183f10663ab496273c"
+    },
+    "sft_trajectories/train.jsonl": {
+      "bytes": 196637,
+      "sha256": "59f55fcbcbed85863cfa9b0f9708a88e383ca0e86b5a9c568a706927f7c2f9cf"
+    },
+    "sft_trajectories/validation.A_action_contract.jsonl": {
+      "bytes": 15928,
+      "sha256": "72f9fd00b42d91ff40dc5d59de87c522d34076ffeceaa8acd3f85be1a8338b44"
+    },
+    "sft_trajectories/validation.B_short_window.jsonl": {
+      "bytes": 49640,
+      "sha256": "20fbbf0f6b36e44fc2a67b74eb8738604d5a30f0c3dbd9f64b0c4c8b9514fe45"
+    },
+    "sft_trajectories/validation.C_long_horizon.jsonl": {
+      "bytes": 130648,
+      "sha256": "f4eb986d0fcbfb7300d7da0f058015dbf0d37a937ea9372f9342d232b62d6f0b"
+    },
+    "sft_trajectories/validation.jsonl": {
+      "bytes": 196216,
+      "sha256": "d47a32214185f33aaad7870f7c106ccfb3f131c66ff7f39edfde280e049041db"
+    }
+  },
+  "manifest_content_sha256": "24708b6a0649ea2ec235b8d6b8bc539c1a170f9b10eaa453904c0c40e5affa0b",
+  "profile_versions": {
+    "artifact_schema": "feed-artifacts-v1",
+    "environment": "feed-environment-v1",
+    "observation": "feed-observation-v1",
+    "reward": "feed-reward-v1",
+    "tools": "feed-tools-v1"
+  },
+  "schema_version": "feed-artifact-manifest-v1",
+  "source_catalog": {
+    "bytes": 19923433,
+    "path": "environments/ShopSimulator/shop_env/data/fine_items_eval_train_all.json.gz",
+    "product_count": 23421,
+    "product_rows_sha256": "a29596a7b12518fb4a887aa01b5b7aa657a4ba8251db266a9c6f96131c1afea7",
+    "sha256": "f51c33217061479f9c95a1068621fcd38e4883ae3d2f6a1627037bea934f2125"
+  },
+  "split_isolation": {
+    "test": {
+      "episodes": 1,
+      "personas": 1,
+      "rows": 1
+    },
+    "train": {
+      "episodes": 1,
+      "personas": 1,
+      "rows": 1
+    },
+    "validation": {
+      "episodes": 1,
+      "personas": 1,
+      "rows": 1
+    }
+  }
+}

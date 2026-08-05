@@ -1,0 +1,21 @@
+{
+  "demo_schema_version": "feed-demo-v1",
+  "inputs": {
+    "evaluation_summary": {
+      "path": "report.json",
+      "sha256": "c7ad8634bd7e0ef9b1dc3b1d37329d1c8db50cf34c2c86a4982dd40b6207e74a"
+    },
+    "logs": {
+      "path": "test.jsonl",
+      "sha256": "9d1de665418983dc167b74d09b5753e597201b8aea0b38d92977758d53c14992"
+    }
+  },
+  "manifest_content_sha256": "b633037a2480f5ce66190255e978214f336eba8a9fddd43da1b9687b0efcc9dc",
+  "network_dependencies": false,
+  "output": {
+    "bytes": 1511312,
+    "path": "dashboard.html",
+    "sha256": "faf883a4666525226256ca681b2492f84fd3f46dc07f234cb7473df494954ea5"
+  },
+  "schema_version": "feed-demo-manifest-v1"
+}

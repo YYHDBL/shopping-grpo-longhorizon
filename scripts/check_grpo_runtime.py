@@ -23,6 +23,7 @@ EXPECTED_VERSIONS = {
 }
 EXPECTED_TRANSFORMERS_REVISION = "7ea2320c76117e6742364808a666ef6f2fb40a67"
 PATCH_MARKER = "SHOPPING_GRPO_DYNAMIC_SAMPLING_PATCH_V3"
+STRICT_TOOL_SCHEMA_PATCH_MARKER = "SHOPPING_GRPO_STRICT_TOOL_SCHEMA_PATCH_V1"
 MAX_SAFE_RESPONSE_LENGTH = 20480
 MAX_SAFE_SEQUENCE_LENGTH = 24576
 CURRENT_RUNTIME_FILES = {
@@ -178,6 +179,14 @@ def validate_dynamic_sampling(config, verl_source: Path, installed):
             "shopping dynamic sampling is enabled but the pinned veRL patch marker is missing; "
             "run scripts/apply_verl_dynamic_sampling_patch.py first"
         )
+    schemas = verl_source.parent / "tools" / "schemas.py"
+    if not schemas.is_file():
+        raise SystemExit(f"cannot locate installed veRL tool schemas source: {schemas}")
+    if STRICT_TOOL_SCHEMA_PATCH_MARKER not in schemas.read_text(encoding="utf-8"):
+        raise SystemExit(
+            "shopping dynamic sampling is enabled but the strict tool-schema patch marker "
+            "is missing; run scripts/apply_verl_dynamic_sampling_patch.py first"
+        )
 
     try:
         from shopping_grpo.training.grpo.dynamic_sampling import (
@@ -239,6 +248,8 @@ def validate_dynamic_sampling(config, verl_source: Path, installed):
                 "reward_tolerance": reward_tolerance,
                 "ray_trainer": str(ray_trainer),
                 "marker": PATCH_MARKER,
+                "schemas": str(schemas),
+                "schema_marker": STRICT_TOOL_SCHEMA_PATCH_MARKER,
             },
             sort_keys=True,
         )

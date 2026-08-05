@@ -20,8 +20,10 @@ src/shopping_grpo/training/grpo/
 ```
 
 `scripts/setup.sh` applies one SHA-256-checked patch needed to connect the
-bounded dynamic sampler to veRL 0.8.0. Setup fails rather than patching an
-unknown veRL version.
+bounded dynamic sampler to veRL 0.8.0 and preserve strict JSON-Schema array,
+string and `additionalProperties` constraints through veRL's Pydantic tool
+schema. Both upstream files are pinned by their original and patched hashes;
+setup fails rather than patching an unknown veRL version or source file.
 
 ## Inputs
 

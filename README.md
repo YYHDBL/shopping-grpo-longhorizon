@@ -62,6 +62,28 @@ flowchart LR
     E --> H
 ```
 
+## 新增：长程短视频 Feed POMDP
+
+仓库现在还提供一个与原 ShopSimulator profile 完全隔离的 `shopping_grpo.feed`
+profile：固定 24–48 条短视频 Feed、隐藏的兴趣/意图/信任/疲劳/预算状态、
+When–What–How 商业介入、延迟购买与退货、Common Random Numbers 反事实信用，以及
+Random / Popular / Similarity / Rule / Teacher 五策略的代码评测。Reward 和用户行为
+由数值模拟器产生，不使用 LLM Judge。
+
+一条 CPU 命令会生成五类训练/评测数据、冻结 test 报告和离线交互页，不会启动训练：
+
+```bash
+PYTHONPATH=src:. python3 scripts/run_feed_mvp.py \
+  --output-dir outputs/feed-mvp \
+  --episodes 30 --feed-length 24 --seed 42
+```
+
+完整设计、数据 schema、真实日志校准、课程 SFT、veRL 静态接线和过程信用能力边界见
+[长程 Feed 购物 Agent 文档](docs/feed-longhorizon.md)。仓库内也有一个可直接打开的
+[24-video 示例 Dashboard](examples/feed_mvp/evaluation/dashboard.html)及其
+[冻结评测报告](examples/feed_mvp/evaluation/report.md)。这些结果是链路 smoke，不是
+训练后模型 Benchmark。
+
 | 阶段 | 目标 | 入口 | 详细文档 |
 |---|---|---|---|
 | Baseline | 测量原始 Qwen3.5-2B 的工具使用能力 | `bash scripts/baseline.sh` | [评估](docs/evaluation.md) |
@@ -326,6 +348,7 @@ scripts/                         面向用户的薄入口脚本
 src/shopping_grpo/
   collection/                    Teacher 轨迹验收与 SFT 数据构造
   environment/                   环境客户端、动作、工具和 Observation
+  feed/                          Feed POMDP、数据、策略、信用、veRL、评测与 Demo
   training/sft/                  SFT 数据渲染与 Mask
   training/grpo/                 veRL AgentLoop、适配和动态采样
   evaluation/                    硬检查、Rubric、轨迹 Judge 和指标汇总
@@ -360,6 +383,7 @@ bash scripts/grpo.sh --logger swanlab
 
 ## 文档导航
 
+- [长程短视频 Feed 购物 Agent](docs/feed-longhorizon.md)
 - [数据采集与数据来源](docs/data-collection.md)
 - [LoRA SFT](docs/sft.md)
 - [使用 veRL 进行 GRPO](docs/grpo.md)

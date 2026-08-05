@@ -1,0 +1,27 @@
+{
+  "config": {
+    "llm_judge": false,
+    "paired": true,
+    "split": "test"
+  },
+  "files": {
+    "report.json": {
+      "bytes": 20434,
+      "sha256": "c7ad8634bd7e0ef9b1dc3b1d37329d1c8db50cf34c2c86a4982dd40b6207e74a"
+    },
+    "report.md": {
+      "bytes": 1593,
+      "sha256": "2156643f6a4d6be26872a5a760f3cb3fb5980644536d32c13b6cdce2cae1aeab"
+    }
+  },
+  "manifest_content_sha256": "f0706a35b13d1cf1e106e08e2c00df3123f829b83bcf9ec79cd1a2f19c7095a1",
+  "schema_version": "feed-evaluation-manifest-v1",
+  "source": {
+    "dataset_manifest_content_sha256": "24708b6a0649ea2ec235b8d6b8bc539c1a170f9b10eaa453904c0c40e5affa0b",
+    "logs": "mixed_policy_logs/test.jsonl",
+    "logs_sha256": "9d1de665418983dc167b74d09b5753e597201b8aea0b38d92977758d53c14992",
+    "run_type": "manifest_bound_baseline",
+    "seeds": "seeds/test.jsonl",
+    "seeds_sha256": "75f672bbbdb47e4cdf449709dd9fb55378d8a1e0d1a63a511a0e12b36ed09996"
+  }
+}

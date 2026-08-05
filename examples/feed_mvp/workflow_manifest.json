@@ -1,0 +1,36 @@
+{
+  "artifacts": {
+    "dashboard": {
+      "bytes": 1511312,
+      "path": "evaluation/dashboard.html",
+      "sha256": "faf883a4666525226256ca681b2492f84fd3f46dc07f234cb7473df494954ea5"
+    },
+    "dataset_manifest": {
+      "bytes": 7184,
+      "path": "manifest.json",
+      "sha256": "36508323a9f6334df2c99435ffdd36cc2a55e29091d38dd33baa20ac2bbaf38e"
+    },
+    "demo_manifest": {
+      "bytes": 668,
+      "path": "evaluation/dashboard.manifest.json",
+      "sha256": "db493b06c8c4e4e7176723aa5edca0fda92b2fa8382e5d8a3db89eb8a751be86"
+    },
+    "evaluation_manifest": {
+      "bytes": 934,
+      "path": "evaluation/evaluation_manifest.json",
+      "sha256": "857f51d6cfe6c795aef5d26ffdf3291d71bd8e23d74b7d4a3986cc333683f96a"
+    }
+  },
+  "config": {
+    "calibrated": false,
+    "episodes": 3,
+    "feed_length": 24,
+    "seed": 42
+  },
+  "dataset_manifest_content_sha256": "24708b6a0649ea2ec235b8d6b8bc539c1a170f9b10eaa453904c0c40e5affa0b",
+  "evaluation_report_content_sha256": "b4ce5bf6ec086d44a848139e113fa86cd3a68984e401e7c5bfc8499224c21ba0",
+  "llm_judge": false,
+  "manifest_content_sha256": "6996bdab575b4e5f29880bd554e1bd1b3145d772b4843e8bb8065ded2d8ee3d9",
+  "schema_version": "feed-cpu-workflow-v1",
+  "training_started": false
+}

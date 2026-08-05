@@ -1,0 +1,148 @@
+{
+  "tools": [
+    {
+      "class_name": "shopping_grpo.feed.verl_adapter.FeedShoppingTool",
+      "config": {"type": "native"},
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "retrieve_products",
+          "description": "Retrieve products relevant to the current video and public behavior history. This is an information call and counts toward the limit of three calls per video.",
+          "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 500, "description": "A concise category-and-constraint retrieval query."}},
+            "required": ["query"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.feed.verl_adapter.FeedShoppingTool",
+      "config": {"type": "native"},
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "inspect_product",
+          "description": "Inspect public catalog facts for one currently visible product. This information call counts toward the limit of three calls per video.",
+          "parameters": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string", "minLength": 1, "maxLength": 128, "description": "A product ID copied from visible_product_ids."}},
+            "required": ["product_id"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.feed.verl_adapter.FeedShoppingTool",
+      "config": {"type": "native"},
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "compare_products",
+          "description": "Compare two to four currently visible products on public price, attributes, and fit. This information call counts toward the limit of three calls per video.",
+          "parameters": {
+            "type": "object",
+            "properties": {"product_ids": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 128, "description": "A product ID copied from visible_product_ids."}, "minItems": 2, "maxItems": 4, "uniqueItems": true, "description": "Products to compare."}},
+            "required": ["product_ids"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.feed.verl_adapter.FeedShoppingTool",
+      "config": {"type": "native"},
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "read_reviews",
+          "description": "Read the public review summary and disclosed risks for one currently visible product. This information call counts toward the limit of three calls per video.",
+          "parameters": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string", "minLength": 1, "maxLength": 128, "description": "A product ID copied from visible_product_ids."}},
+            "required": ["product_id"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.feed.verl_adapter.FeedShoppingTool",
+      "config": {"type": "native"},
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "find_alternatives",
+          "description": "Find cheaper or otherwise substitutable products for one currently visible product. This information call counts toward the limit of three calls per video.",
+          "parameters": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string", "minLength": 1, "maxLength": 128, "description": "The visible product for which alternatives are requested."}},
+            "required": ["product_id"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.feed.verl_adapter.FeedShoppingTool",
+      "config": {"type": "native"},
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "find_complements",
+          "description": "Find genuinely complementary products for one currently visible product. This information call counts toward the limit of three calls per video.",
+          "parameters": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string", "minLength": 1, "maxLength": 128, "description": "The visible anchor product."}},
+            "required": ["product_id"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.feed.verl_adapter.FeedShoppingTool",
+      "config": {"type": "native"},
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "check_inventory",
+          "description": "Check current public availability for one to four visible products. This information call counts toward the limit of three calls per video.",
+          "parameters": {
+            "type": "object",
+            "properties": {"product_ids": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 128, "description": "A product ID copied from visible_product_ids."}, "minItems": 1, "maxItems": 4, "uniqueItems": true, "description": "Visible products whose inventory should be checked."}},
+            "required": ["product_ids"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "class_name": "shopping_grpo.feed.verl_adapter.FeedShoppingTool",
+      "config": {"type": "native"},
+      "tool_schema": {
+        "type": "function",
+        "function": {
+          "name": "commit_recommendation",
+          "description": "Commit exactly one intervention for the current video. The flat fields implement When--What--How: decision is When; product_ids and relationship are What; surface and strategy are How. Evidence IDs must be copied from the current evidence_ids. Use no_recommend when intervention would be irrelevant or repetitive after purchase.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "decision": {"type": "string", "enum": ["recommend", "delay", "no_recommend"], "description": "When: intervene now, delay, or do not recommend."},
+              "surface": {"type": "string", "enum": ["none", "product_card", "coupon", "review_summary", "price_comparison", "similar_products", "bundle", "creator_video"], "description": "How: the user-visible intervention surface; use none otherwise."},
+              "product_ids": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 128, "description": "A product ID copied from visible_product_ids."}, "minItems": 0, "maxItems": 2, "uniqueItems": true, "description": "What: visible products selected for the intervention; empty when not recommending."},
+              "relationship": {"type": "string", "enum": ["primary", "alternative", "complement", "bundle"], "description": "What: role of the selected product set; use primary when not recommending."},
+              "strategy": {"type": "string", "enum": ["none", "direct", "review_summary", "price_comparison", "discount", "cheaper_alternative", "similar", "complement", "bundle"], "description": "How: a non-none presentation strategy for recommendations; use none otherwise."},
+              "evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 512, "description": "An evidence ID copied from the current evidence_ids."}, "minItems": 0, "maxItems": 16, "uniqueItems": true, "description": "Public evidence supporting this decision."},
+              "explanation": {"type": "string", "maxLength": 500, "description": "Optional concise, evidence-grounded user-facing explanation."}
+            },
+            "required": ["decision", "surface", "product_ids", "strategy", "evidence_ids"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ]
+}
