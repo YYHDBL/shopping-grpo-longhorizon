@@ -71,14 +71,14 @@ flowchart LR
 
 ### SFT 数据是怎么收集的？
 
-最终数据使用 `deepseek-v4-flash` 作为教师模型，在 ShopSimulator
-Environment v2.1 中分七批采集：
+当前数据使用 `deepseek-v4-flash` 作为教师模型，在 ShopSimulator
+Environment v2.1 中采集：
 
-- 共获得 604 条互不重复的原始任务轨迹；
+- 共获得 2,498 条原始任务轨迹；
 - 每条轨迹在采集时都真实执行环境动作，再按 Reward v3 终局结果验收；
-- 只保留成功完成 `gold_purchase` 的 428 条轨迹；
-- 删除教师模型的私有推理内容，只保留用户可观察到的工具调用与动作；
-- 最终划分为 379 条训练数据和 49 条验证数据。
+- 其中 1,026 条通过严格验收，本次固定使用 1,000 条；
+- 最终划分为 800 条训练数据和 200 条验证数据，并与 GRPO、Final-200
+  保持 task_id 零重叠。
 
 仓库已提供可断点续跑的采集入口：
 
@@ -86,7 +86,7 @@ Environment v2.1 中分七批采集：
 python scripts/collect_sft_data.py \
   --tasks data/grpo/train.jsonl \
   --output-dir outputs/sft-collection \
-  --target-accepted 428 \
+  --target-accepted 1000 \
   --workers 4
 ```
 
@@ -195,7 +195,7 @@ SFT 带来了主要能力提升，让模型学会合法工具调用、长程搜�
 
 | 环节 | 耗时估算 |
 |---|---:|
-| Teacher 采集（604 条 × 7 批） | ~7–14 小时 |
+| Teacher 采集（2,498 条原始轨迹） | 取决于接口并发与限流 |
 | 200 任务评测（Base） | ~20 分钟 |
 | 200 任务评测（SFT/GRPO） | ~40–60 分钟 |
 | LLM Judge 评分 200 条轨迹 | ~30–60 分钟 |
@@ -313,7 +313,7 @@ Reward v3 是一个确定性的终局 Reward，不依赖另一个大模型进行
 ```text
 configs/                         当前 GRPO、AgentLoop 和工具配置
 data/
-  sft/                           379 条训练 + 49 条验证轨迹
+  sft/                           800 条训练 + 200 条验证轨迹
   grpo/                          JSONL 与 veRL Parquet 数据
   evaluation/                    冻结的 200 道留出任务
 docs/                            数据、SFT、GRPO、评估与 Reward 文档

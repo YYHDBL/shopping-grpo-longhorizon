@@ -77,6 +77,16 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
                             "budget": {"passed": True},
                         },
                     },
+                    "steps": [
+                        {
+                            "index": 0,
+                            "tool": "search",
+                            "parameters": {"query": "shoe"},
+                            "done": False,
+                            "reward": 0.0,
+                        }
+                    ],
+                    "guard_rejection_reason_counts": {"asin_not_visible": 2},
                 }
             )
             return AgentLoopOutput(
@@ -119,6 +129,14 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
         self.assertEqual(
             output.extra_fields["shopping"]["reward"]["terminal_utility"],
             1.0,
+        )
+        self.assertEqual(
+            output.extra_fields["shopping"]["actions"],
+            [{"tool": "search", "parameters": {"query": "shoe"}}],
+        )
+        self.assertEqual(
+            output.extra_fields["shopping"]["guard_rejection_reasons"],
+            {"asin_not_visible": 2},
         )
         self.assertTrue(created[0].released)
 
@@ -417,6 +435,10 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
             self.assertEqual(state["guard_rejection_count"], 3)
             self.assertEqual(state["guard_rejection_after_truncation_count"], 3)
             self.assertEqual(state["action_attempt_after_truncation_count"], 3)
+            self.assertEqual(
+                state["guard_rejection_reason_counts"],
+                {"asin_not_visible": 3},
+            )
             self.assertIn("maximum", response.text)
 
         asyncio.run(run())

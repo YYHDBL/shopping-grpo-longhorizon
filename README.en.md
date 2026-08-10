@@ -71,13 +71,12 @@ flowchart LR
 
 ### How the SFT data was collected
 
-The final collection used `deepseek-v4-flash` as a teacher in ShopSimulator
-Environment v2.1. Seven batches produced 604 unique raw trajectories. We
-executed every trajectory in the environment and accepted it from its Reward v3
-terminal result, kept 428 gold-purchase trajectories, removed private reasoning
-and retained only observable actions.
-The final split contains 379 training and 49 validation rows. Dataset hashes
-and the complete audit are in [Data collection](docs/data-collection.md).
+The current collection used `deepseek-v4-flash` as a teacher in ShopSimulator
+Environment v2.1. It produced 2,498 raw trajectories, of which 1,026 passed the
+strict acceptance filter. This frozen revision uses 1,000 trajectories split
+into 800 training and 200 validation rows. SFT, GRPO and Final-200 task IDs are
+pairwise disjoint. Dataset hashes and the audit are in
+[Data collection](docs/data-collection.md).
 
 The resumable collection entry point is:
 
@@ -85,7 +84,7 @@ The resumable collection entry point is:
 python scripts/collect_sft_data.py \
   --tasks data/grpo/train.jsonl \
   --output-dir outputs/sft-collection \
-  --target-accepted 428 \
+  --target-accepted 1000 \
   --workers 4
 ```
 
@@ -183,7 +182,7 @@ All training used a single NVIDIA RTX 6000 with 96 GB of GPU memory.
 
 | Stage | Estimated time |
 |---|---:|
-| Teacher collection (604 trajectories × 7 batches) | ~7–14 h |
+| Teacher collection (2,498 raw trajectories) | Depends on endpoint concurrency and rate limits |
 | 200-task evaluation (Base) | ~20 min |
 | 200-task evaluation (SFT/GRPO) | ~40–60 min |
 | LLM Judge scoring for 200 trajectories | ~30–60 min |
@@ -309,7 +308,7 @@ The complete formula, termination rules and evidence requirements are in the
 ```text
 configs/                         current GRPO, AgentLoop and tool configuration
 data/
-  sft/                           379 train + 49 validation trajectories
+  sft/                           800 train + 200 validation trajectories
   grpo/                          ready-to-train JSONL and veRL Parquet
   evaluation/                    frozen 200-task held-out set
 docs/                            one guide for each tutorial stage and Reward v3

@@ -2,9 +2,57 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Hashable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
+
+
+def build_rollout_diagnostics(
+    uids: Sequence[Hashable], shopping_infos: Sequence[object]
+) -> list[dict[str, Any]]:
+    """Attach stable group/rollout identities to public AgentLoop diagnostics."""
+    if len(uids) != len(shopping_infos):
+        raise ValueError("uids and shopping_infos must have equal length")
+    rollout_counts: dict[Hashable, int] = {}
+    records = []
+    for index, (uid, info) in enumerate(zip(uids, shopping_infos, strict=True)):
+        if not isinstance(info, Mapping):
+            raise ValueError(f"shopping extra field at index {index} is not an object")
+        rollout_index = rollout_counts.get(uid, 0)
+        rollout_counts[uid] = rollout_index + 1
+        records.append({"uid": uid, "rollout_index": rollout_index, **dict(info)})
+    return records
+
+
+def append_training_diagnostic(
+    path: str | Path | None,
+    event: str,
+    global_step: int,
+    **payload: object,
+) -> None:
+    """Append one driver-side training event; an unset path disables persistence."""
+    if not path:
+        return
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    def scalar(value):
+        item = getattr(value, "item", None)
+        if callable(item):
+            return item()
+        raise TypeError(f"{type(value).__name__} is not JSON serializable")
+
+    record = {
+        "schema_version": 1,
+        "event": str(event),
+        "global_step": int(global_step),
+        **payload,
+    }
+    with destination.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True, default=scalar))
+        handle.write("\n")
 
 
 def aggregate_shopping_metrics(shopping_infos: Sequence[object]) -> dict[str, float]:

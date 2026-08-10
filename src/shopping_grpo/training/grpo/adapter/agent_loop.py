@@ -282,6 +282,10 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
             output.extra_fields["shopping"] = {
                 "task_id": task_id,
                 "steps": len(state["steps"]),
+                "actions": [
+                    {"tool": step["tool"], "parameters": step["parameters"]}
+                    for step in state["steps"]
+                ],
                 "done": bool(state["done"]),
                 "termination_reason": state["termination_reason"],
                 "error": state["error"],
@@ -315,6 +319,9 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
                 "observation_any_truncated": bool(state["observation_any_truncated"]),
                 "observation_footer_failures": int(state["observation_footer_failures"]),
                 "guard_rejections": int(state["guard_rejection_count"]),
+                "guard_rejection_reasons": dict(
+                    state["guard_rejection_reason_counts"]
+                ),
                 "guard_rejections_after_truncation": int(
                     state["guard_rejection_after_truncation_count"]
                 ),

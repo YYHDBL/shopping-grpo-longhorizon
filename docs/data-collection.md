@@ -9,8 +9,8 @@ trajectories, not historical failed collection attempts.
 
 ## How the dataset was produced
 
-The final collection used ShopSimulator Environment v2.1, Reward v3 and
-`deepseek-v4-flash` as the teacher. Seven batches produced 604 raw trajectories.
+The current collection used ShopSimulator Environment v2.1, Reward v3 and
+`deepseek-v4-flash` as the teacher. It produced 2,498 raw trajectories.
 Every trajectory executed its actions in ShopSimulator during collection. The
 saved result was accepted only when Environment v2.1 returned a valid Reward v3
 gold purchase; no second model judged whether the trajectory succeeded.
@@ -19,33 +19,25 @@ Collection audit:
 
 | Item | Value |
 |---|---:|
-| Raw trajectories | 604 |
-| Unique task IDs | 604 |
-| Accepted gold trajectories | 428 |
-| Acceptance rate | 70.9% |
-| Mean raw reward | 0.6121 |
-| Mean steps | 11.3 |
-| Guard violations | 0 |
-| HTTP 400 responses | 0 |
-| Collection errors | 4 |
+| Raw trajectories | 2,498 |
+| Accepted trajectories | 1,026 |
+| Acceptance rate | 41.07% |
+| Frozen rows used | 1,000 |
+| Unused accepted rows | 26 |
 
-The 428 accepted trajectories were split into 379 training and 49 validation
-rows. Assistant reasoning was removed; the SFT target contains only the
-observable action protocol. This keeps the training contract aligned with what
-the environment can verify.
+The frozen subset was split into 800 training and 200 validation rows. The two
+splits are task-disjoint and also have zero task-ID overlap with GRPO and the
+Final-200 evaluation set.
 
 ## Frozen deliverables
 
 | File | Rows | SHA-256 |
 |---|---:|---|
-| `data/sft/train.jsonl` | 379 | `8cd1f72130b3c781d5ffe08fe3e399b2a9e45d204e3f3bd0d8e677d1b51c8ec5` |
-| `data/sft/validation.jsonl` | 49 | `f8ae506d0fa9d1526342a9f717da24922c8a55776d076a296698abac4fde05b3` |
+| `data/sft/train.jsonl` | 800 | `8c3a6ff0033f6ea672af609891e747d60652ddc17e8d3c8eacb19e9d96dd9477` |
+| `data/sft/validation.jsonl` | 200 | `9525cc2fb04a1d8d38ae2db959397da908dde3fea766f580fdcf77d1239533cc` |
 
-The aggregate raw collection had SHA-256
-`b1db9e41673d285da7164e8352fa0a702f537157792fa137c94f7cf200435fa1`;
-the accepted aggregate had SHA-256
-`aab4d81f134dfcd40e67611f5a413142e4825d5cb6ea60b697536aec2c88fab7`.
-Raw teacher responses are intentionally not part of the beginner repository.
+Raw teacher responses are intentionally not committed; their collection path
+is retained in `data/sft/metadata.json` as provenance.
 
 ## Run a new collection
 
@@ -59,7 +51,7 @@ python scripts/collect_sft_data.py \
   --tasks data/grpo/train.jsonl \
   --output-dir outputs/sft-collection \
   --model deepseek-v4-flash \
-  --target-accepted 428 \
+  --target-accepted 1000 \
   --workers 4
 ```
 

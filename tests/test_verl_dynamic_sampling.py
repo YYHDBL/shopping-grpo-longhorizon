@@ -1,15 +1,51 @@
 """Unit tests for the project-side reward-group filter."""
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from shopping_grpo.training.grpo.dynamic_sampling import (
     aggregate_shopping_metrics,
+    append_training_diagnostic,
+    build_rollout_diagnostics,
     extract_shopping_group_signals,
     select_reward_varying_groups,
 )
 
 
 class RewardGroupSelectionTest(unittest.TestCase):
+    def test_training_diagnostics_append_public_rollouts_as_jsonl(self):
+        rollouts = build_rollout_diagnostics(
+            ["task-a", "task-a"],
+            [
+                {
+                    "task_id": 7,
+                    "actions": [
+                        {"tool": "search", "parameters": {"query": "shoe"}}
+                    ],
+                },
+                {"task_id": 7, "termination_reason": "max_steps"},
+            ],
+        )
+        self.assertEqual([item["rollout_index"] for item in rollouts], [0, 1])
+        self.assertEqual(rollouts[0]["actions"][0]["tool"], "search")
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "diagnostics" / "training.jsonl"
+            append_training_diagnostic(
+                path,
+                "generation_batch",
+                3,
+                rollouts=rollouts,
+            )
+            record = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(record["schema_version"], 1)
+        self.assertEqual(record["event"], "generation_batch")
+        self.assertEqual(record["global_step"], 3)
+        self.assertEqual(record["rollouts"][1]["termination_reason"], "max_steps")
+
     def test_all_zero_group_is_dropped(self):
         indices, stats = select_reward_varying_groups(["a"] * 4, [0, 0, 0, 0])
         self.assertEqual(indices, [])

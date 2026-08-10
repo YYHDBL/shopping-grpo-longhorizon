@@ -61,6 +61,7 @@ def make_runtime_state(task_id: int, max_steps: int) -> dict:
         "latest_observation_truncated": False,
         "observation_footer_failures": 0,
         "guard_rejection_count": 0,
+        "guard_rejection_reason_counts": {},
         "guard_rejection_after_truncation_count": 0,
         "action_attempt_after_truncation_count": 0,
     }

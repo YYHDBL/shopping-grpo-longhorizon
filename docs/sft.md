@@ -10,8 +10,8 @@ variants and terminate.
 ## Inputs
 
 - Base model: `Qwen/Qwen3.5-2B`
-- Train data: `data/sft/train.jsonl` (379 rows)
-- Validation data: `data/sft/validation.jsonl` (49 rows)
+- Train data: `data/sft/train.jsonl` (800 rows)
+- Validation data: `data/sft/validation.jsonl` (200 rows)
 - Target: assistant tokens only; user and tool-observation tokens are masked
 
 The data provenance and hashes are recorded in
@@ -44,10 +44,17 @@ Default recipe:
 | LoRA rank / alpha / dropout | 16 / 32 / 0.05 |
 | Gradient checkpointing | enabled |
 | Attention implementation | SDPA |
+| Saved epoch checkpoints | 3 |
 
 The long context is intentional: a training example includes the complete
 multi-turn interaction. Shortening it may truncate the terminal decision or the
 evidence that supports it.
+
+Each `checkpoint-*` directory keeps its adapter and `trainer_state.json`; the
+root `train_summary.json` also contains the complete `log_history`. Keep all
+three checkpoints until the same held-out task suite has been run against each
+one. Validation loss is useful for screening, but the checkpoint used by GRPO
+should be selected by held-out task success and failure-type coverage.
 
 ## Evaluate
 

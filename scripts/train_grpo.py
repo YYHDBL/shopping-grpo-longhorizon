@@ -92,6 +92,9 @@ def build_command(args: argparse.Namespace) -> tuple[list[str], dict[str, str]]:
             "GRPO_TRAIN_FILE": str(train_data),
             "GRPO_VAL_FILE": str(val_data),
             "GRPO_OUTPUT_DIR": str(output),
+            "SHOPPING_GRPO_DIAGNOSTICS_PATH": str(
+                output / "training_diagnostics.jsonl"
+            ),
             "SHOPSIM_BASE_URL": str(args.env_url),
             "SHOPPING_AGENT_LOOP_CONFIG": str(DEFAULT_AGENT_CONFIG),
             "SHOPPING_TOOL_CONFIG": str(DEFAULT_TOOL_CONFIG),

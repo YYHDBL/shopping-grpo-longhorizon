@@ -75,7 +75,7 @@ def parse_args():
     parser.add_argument("--qlora", action="store_true", help="以 NF4 4-bit 加载基座，并按 PEFT 标准预处理")
     parser.add_argument("--gradient-checkpointing", action="store_true")
     parser.add_argument("--logging-steps", type=int, default=5)
-    parser.add_argument("--save-total-limit", type=int, default=2)
+    parser.add_argument("--save-total-limit", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--train-count", type=int, default=None)
     parser.add_argument("--train-ratio", type=float, default=None)
@@ -515,6 +515,7 @@ def main():
         "validation_examples": len(validation_examples),
         "train_loss": result.training_loss,
         "metrics": result.metrics,
+        "log_history": trainer.state.log_history,
         "peak_gpu_memory_gib": round(gpu_peak, 2),
         "total_time_minutes": round(total_time / 60, 1) if total_time else None,
         "monitoring": {

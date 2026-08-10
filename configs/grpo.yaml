@@ -41,7 +41,7 @@ actor_rollout_ref:
     clip_ratio_low: 0.20
     clip_ratio_high: 0.20
     entropy_coeff: 0.0
-    calculate_entropy: false
+    calculate_entropy: true
     use_kl_loss: false
     kl_loss_coef: 0.0
     kl_loss_type: low_var_kl

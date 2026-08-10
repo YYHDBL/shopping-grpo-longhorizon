@@ -72,6 +72,8 @@ class ShopSimulatorTool(BaseTool):
         reason = action_reject_reason(self.name, parameters, observation)
         if reason:
             state["guard_rejection_count"] += 1
+            reason_counts = state["guard_rejection_reason_counts"]
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
             state["guard_rejection_after_truncation_count"] += int(
                 bool(state.get("latest_observation_truncated"))
             )

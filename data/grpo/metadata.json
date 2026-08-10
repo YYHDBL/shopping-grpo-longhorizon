@@ -1,17 +1,24 @@
 {
-  "schema_version": "shopping-grpo-dataset-v1",
   "environment": "shopsimulator-environment-v2.1",
+  "provenance": {
+    "excluded": "新 SFT 全部任务 + 冻结评测 200 题",
+    "note": "未做难度探测，缺少 probe_steps / length_bucket 字段",
+    "reason": "保持 SFT 任务与 GRPO 任务池不相交（沿用原始实验设计）",
+    "rebuilt": true,
+    "seed": 20260808
+  },
   "reward": "shopsimulator-reward-v3",
+  "schema_version": "shopping-grpo-dataset-v1",
   "train": {
-    "tasks": 1000,
     "jsonl": "data/grpo/train.jsonl",
     "parquet": "data/grpo/train.parquet",
-    "parquet_sha256": "e4b4765b67efcc064ba4e656db625a812a34cbcff00da0e23d6a3df8aac5fdd4"
+    "parquet_sha256": "98bb1799a42916b6ca2a1a2618f11cfec60f428e99e6ada448a78361768206e5",
+    "tasks": 1000
   },
   "validation": {
-    "tasks": 50,
     "jsonl": "data/grpo/validation.jsonl",
     "parquet": "data/grpo/validation.parquet",
-    "parquet_sha256": "9aa370f00d7ead942e47cf9aed4ab0c55cd7426220f4603f4fed5dc949ea2788"
+    "parquet_sha256": "8c9fbdd22bf6d191d1da6bcca9c1612e170bb928483c4ce0c8d0934f9ba69317",
+    "tasks": 50
   }
 }

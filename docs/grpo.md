@@ -61,10 +61,19 @@ Important defaults:
 | Maximum training steps | 500 |
 | Save / validation frequency | 50 / 50 |
 | KL reward / KL loss | disabled / disabled |
+| Policy entropy measurement | enabled (logging only) |
 
 Dynamic sampling can generate at most three batches to find a useful update and
 permits at most ten consecutive skipped updates. These bounds prevent an
 all-equal reward batch from causing an unbounded resampling loop.
+
+Each run also appends `training_diagnostics.jsonl` under its output directory.
+`generation_batch` records contain every generated rollout, its public tool
+sequence, terminal result, reward breakdown, Guard rejection reasons and group
+keep/drop decision. `optimizer_step` records preserve the scalar veRL metrics,
+including entropy, PPO KL, clip fractions, response lengths and effective-group
+rates. `skipped_update` records make zero-signal attempts visible even though
+they do not advance the optimizer step.
 
 The canonical configuration is [`configs/grpo.yaml`](../configs/grpo.yaml).
 Advanced overrides may be appended after `--`:

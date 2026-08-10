@@ -21,6 +21,7 @@ class DynamicSamplingConfigTest(unittest.TestCase):
         self.assertEqual(config.data.max_response_length, 20480)
         self.assertEqual(config.actor_rollout_ref.rollout.max_model_len, 24576)
         self.assertFalse(config.actor_rollout_ref.actor.use_dynamic_bsz)
+        self.assertTrue(config.actor_rollout_ref.actor.calculate_entropy)
         self.assertEqual(
             config.actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu, 1
         )

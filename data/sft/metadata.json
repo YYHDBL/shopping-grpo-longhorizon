@@ -1,15 +1,58 @@
 {
-  "schema_version": "shopping-sft-dataset-v1",
   "environment": "shopsimulator-environment-v2.1",
+  "provenance": {
+    "acceptance_rate": 0.4107,
+    "accepted": 1026,
+    "drop_counts": {
+      "guard_violation": 716,
+      "not_gold:early_abstain": 2,
+      "not_gold:graceful_stop": 1,
+      "not_gold:max_steps": 85,
+      "not_gold:partial_alternative_purchase": 223,
+      "not_gold:repeat_loop": 214,
+      "not_gold:reward_unverifiable": 32,
+      "not_gold:unknown": 100,
+      "not_gold:valid_alternative_purchase": 2,
+      "not_gold:wrong_purchase": 97
+    },
+    "raw_trajectories": 2498,
+    "reward_type_counts": {
+      "early_abstain": 2,
+      "gold_purchase": 1742,
+      "graceful_stop": 1,
+      "max_steps": 85,
+      "partial_alternative_purchase": 223,
+      "repeat_loop": 214,
+      "reward_unverifiable": 32,
+      "unknown": 100,
+      "valid_alternative_purchase": 2,
+      "wrong_purchase": 97
+    },
+    "seed": 42,
+    "source_files": [
+      "outputs/teacher_collection/raw_trajectories.jsonl"
+    ],
+    "split_mode": "exact_rows",
+    "teacher_models": [
+      "deepseek-v4-flash"
+    ],
+    "unused_accepted": 26,
+    "val_ratio": null
+  },
   "reward": "shopsimulator-reward-v3",
+  "schema_version": "shopping-sft-dataset-v1",
+  "test": {
+    "note": "测试集由 evaluation/ 承载，不在 sft/ 下重复存放",
+    "path": "data/evaluation/tasks.jsonl"
+  },
   "train": {
     "path": "data/sft/train.jsonl",
-    "rows": 379,
-    "sha256": "8cd1f72130b3c781d5ffe08fe3e399b2a9e45d204e3f3bd0d8e677d1b51c8ec5"
+    "rows": 800,
+    "sha256": "8c3a6ff0033f6ea672af609891e747d60652ddc17e8d3c8eacb19e9d96dd9477"
   },
   "validation": {
     "path": "data/sft/validation.jsonl",
-    "rows": 49,
-    "sha256": "f8ae506d0fa9d1526342a9f717da24922c8a55776d076a296698abac4fde05b3"
+    "rows": 200,
+    "sha256": "9525cc2fb04a1d8d38ae2db959397da908dde3fea766f580fdcf77d1239533cc"
   }
 }
