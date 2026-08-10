@@ -1,0 +1,50 @@
+{
+  "schema_version": "shopping-pure-v4-sft-v1",
+  "teacher_model": "deepseek-v4-flash",
+  "rows": 1192,
+  "unique_task_ids": 1192,
+  "held_out_evaluation_overlap": 0,
+  "merge": {
+    "seed": 20260810,
+    "current_v4_rows": 1000,
+    "merged_package_rows": 878,
+    "legacy_rows_removed_from_merged": 428,
+    "candidate_rows": 1450,
+    "duplicate_task_groups": 258,
+    "discarded_duplicate_rows": 258,
+    "selection_priority": [
+      "no_guard_rejection",
+      "gold_purchase",
+      "fewer_tool_calls",
+      "seeded_random_tie_break"
+    ],
+    "selected_with_guard_rejection": 0,
+    "selected_with_gold_purchase": 1192
+  },
+  "difficulty_labeling": {
+    "model": "deepseek-v4-flash",
+    "simple": 284,
+    "medium": 798,
+    "hard": 110,
+    "full_trajectory_rows": 1186,
+    "compact_tool_content_rows": 6,
+    "compact_tool_content_task_ids": [983, 10574, 10646, 14803, 18595, 20915],
+    "mean_confidence": 0.894,
+    "confidence_below_0_8": 4
+  },
+  "requested_3_5_2_mix": {
+    "status": "not_materialized",
+    "reason": "Observed labels are 23.8% simple, 66.9% medium, and 9.2% hard. An exact 30/50/20 dataset without repetition can contain at most 550 rows and would discard 642 valid rows.",
+    "maximum_no_repeat_rows": 550,
+    "maximum_no_repeat_counts": {
+      "simple": 165,
+      "medium": 275,
+      "hard": 110
+    }
+  },
+  "sha256": {
+    "all.jsonl": "7b70db7174daf7660209800441c06b2502d602969881b524ff0d2a3be5fb981e",
+    "difficulty_labels.jsonl": "50da1b9014e876848d5b5b8dcbf221ef8e981f1d32de28ded6b9492fcc70b894",
+    "duplicate_report.json": "f4947f659708b03291939dc8a0f67d086cfca2753a6e8461a3fd1de23d4727ca"
+  }
+}
