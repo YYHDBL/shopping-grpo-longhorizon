@@ -14,7 +14,7 @@ Reproducible post-training and evaluation for long-horizon shopping agents
 [![LoRA SFT](https://img.shields.io/badge/Post--training-LoRA%20SFT-7B61FF)](docs/sft.md)
 [![veRL](https://img.shields.io/badge/veRL-0.8.0-0E8A16)](https://github.com/verl-project/verl)
 [![ShopSimulator](https://img.shields.io/badge/Environment-ShopSimulator%20v2.1-4C78A8)](https://arxiv.org/pdf/2601.18225)
-[![Benchmark](https://img.shields.io/badge/Benchmark-Final--183-F59E0B)](docs/evaluation-dataset.md)
+[![Benchmark](https://img.shields.io/badge/Benchmark-Final--200--Clean-F59E0B)](docs/evaluation-dataset.md)
 
 <br />
 
@@ -50,7 +50,7 @@ does not depend on a separately running third-party repository.
 | Baseline | Evaluate the untouched base model | `bash scripts/baseline.sh` | [Evaluation](docs/evaluation.md) |
 | SFT | Learn tool use from accepted teacher trajectories | `bash scripts/sft.sh` | [SFT](docs/sft.md) |
 | GRPO | Optimize terminal Reward v3 with online rollouts | `bash scripts/grpo.sh` | [GRPO](docs/grpo.md) |
-| Evaluation | Run the curated Final-183 protocol | `bash scripts/evaluate.sh NAME` | [Evaluation](docs/evaluation.md) |
+| Evaluation | Run the curated Final-200 Clean protocol | `bash scripts/evaluate.sh NAME` | [Evaluation](docs/evaluation.md) |
 
 The checked-in SFT data was produced by a separate collection stage documented
 in [Data collection](docs/data-collection.md). The custom constraint-aware
@@ -63,7 +63,7 @@ flowchart LR
     C --> D[LoRA SFT]
     D --> E[Online GRPO with veRL]
     F[Frozen ShopSimulator v2.1] --> E
-    G[Final-183 held-out tasks] --> H[Shared evaluation pipeline]
+    G[Final-200 Clean held-out tasks] --> H[Shared evaluation pipeline]
     I[Baseline] --> H
     D --> H
     E --> H
@@ -74,7 +74,7 @@ flowchart LR
 The current collection used `deepseek-v4-flash` as a teacher in ShopSimulator
 Environment v2.1. It produced 2,498 raw trajectories, of which 1,026 passed the
 strict acceptance filter. This frozen revision uses 1,000 trajectories split
-into 800 training and 200 validation rows. SFT, GRPO and Final-183 task IDs are
+into 800 training and 200 validation rows. SFT, GRPO and Final-200 Clean task IDs are
 pairwise disjoint. Dataset hashes and the audit are in
 [Data collection](docs/data-collection.md).
 
@@ -135,10 +135,10 @@ Decision Quality and Termination Efficiency independently on a 0/1/2 scale. It
 also assesses each Rubric and assigns errors from a frozen taxonomy. The final
 report keeps Reward/terminal, requirement Rubric, trajectory quality and
 deterministic behavior as four separate panels—there is no composite score.
-Failed, missing and not-judged tasks remain in the Final-183 denominator. The
+Failed, missing and not-judged tasks remain in the Final-200 Clean denominator. The
 [evaluation guide](docs/evaluation.md) contains the complete prompts, one
 worked benchmark example, input-isolation rules and aggregation contract. An
-historical static view is available in the [Final-200 Benchmark Dashboard](docs/evaluation-dashboard.html); the current task set is documented in [Final-183](docs/evaluation-dataset.md).
+historical static view is available in the [Final-200 Benchmark Dashboard](docs/evaluation-dashboard.html); the current task set is documented in [Final-200 Clean](docs/evaluation-dataset.md).
 
 > **Reserved figure — Training and evaluation pipeline.** A full-width diagram
 > showing teacher data collection, LoRA SFT, online GRPO rollouts and the shared
@@ -146,7 +146,7 @@ historical static view is available in the [Final-200 Benchmark Dashboard](docs/
 
 ## Results
 
-The following are archived Final-200 results; new comparisons use Final-183:
+The following are archived Final-200 results; new comparisons use Final-200 Clean:
 
 | Model | Strict success | Purchase success | Mean reward |
 |---|---:|---:|---:|
@@ -183,9 +183,9 @@ All training used a single NVIDIA RTX 6000 with 96 GB of GPU memory.
 | Stage | Estimated time |
 |---|---:|
 | Teacher collection (2,498 raw trajectories) | Depends on endpoint concurrency and rate limits |
-| Final-183 evaluation (Base) | ~20 min |
-| Final-183 evaluation (SFT/GRPO) | ~40–60 min |
-| LLM Judge scoring for 183 trajectories | ~30–60 min |
+| Final-200 Clean evaluation (Base) | ~20 min |
+| Final-200 Clean evaluation (SFT/GRPO) | ~40–60 min |
+| LLM Judge scoring for 200 trajectories | ~30–60 min |
 
 ## Requirements
 
@@ -310,7 +310,7 @@ configs/                         current GRPO, AgentLoop and tool configuration
 data/
   sft/                           800 train + 200 validation trajectories
   grpo/                          ready-to-train JSONL and veRL Parquet
-  evaluation/                    curated Final-183 held-out set
+  evaluation/                    curated Final-200 Clean held-out set
 docs/                            one guide for each tutorial stage and Reward v3
 environments/ShopSimulator/      embedded environment and product archive
 experiments/
@@ -366,7 +366,7 @@ bash scripts/grpo.sh --logger swanlab
 - [LoRA SFT](docs/sft.md)
 - [GRPO with veRL](docs/grpo.md)
 - [Held-out evaluation](docs/evaluation.md)
-- [Final-183 evaluation dataset](docs/evaluation-dataset.md)
+- [Final-200 Clean evaluation dataset](docs/evaluation-dataset.md)
 - [Final-200 Benchmark Dashboard (historical)](docs/evaluation-dashboard.html)
 - [Reward v3 design](docs/reward-v3.md)
 - [Auditable experiment results](experiments/comparison.md)

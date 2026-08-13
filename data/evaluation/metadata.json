@@ -1,16 +1,16 @@
 {
-  "schema_version": "shopping-evaluation-dataset-v2",
-  "name": "Final-183",
-  "asset": "shop_benchmark_reward_v3_final_183",
-  "contract": "environment-v2.1/reward-v3/curated-final183-v1",
+  "schema_version": "shopping-evaluation-dataset-v3",
+  "name": "Final-200-Clean",
+  "asset": "shop_benchmark_reward_v3_final_200_clean",
+  "contract": "environment-v2.1/reward-v3/curated-final200-clean-v1",
   "environment": "shopsimulator-environment-v2.1",
   "environment_version": "shopsimulator-environment-v2.1",
   "reward": "shopsimulator-reward-v3",
   "reward_version": "shopsimulator-reward-v3",
   "evaluated": false,
   "path": "data/evaluation/tasks.jsonl",
-  "tasks": 183,
-  "sha256": "0d723a9fcf95d026c79c83b833eec2cb85aa49013da5f661cd1cb581aede773a",
+  "tasks": 200,
+  "sha256": "d99112a20ef47534c27a32e4b38229bf048dcc6b06fef2e3e919aac3093662f5",
   "training_overlap": 0,
   "source": {
     "name": "Final-200",
@@ -19,7 +19,8 @@
   },
   "curation": {
     "date": "2026-08-13",
-    "excluded_task_ids": [2352, 3368, 4071, 4786, 4925, 5475, 5510, 5703, 5904, 6143, 6520, 11168, 11773, 12860, 19180, 20345, 21785],
-    "reason": "Removed tasks with impossible Reward v3 outcomes, query-gold contradictions or hidden gold constraints, and gold prices made impossible by strict parsing of colloquial budgets."
+    "excluded_source_task_ids": [1212, 1520, 2352, 3025, 3038, 3247, 3368, 3797, 4071, 4169, 4206, 4364, 4604, 4786, 4925, 5377, 5475, 5510, 5633, 5703, 5831, 5904, 6143, 6520, 6536, 6641, 7058, 7729, 8583, 9214, 10099, 10197, 10270, 10463, 10633, 11157, 11168, 11361, 11699, 11752, 11773, 12065, 12162, 12738, 12759, 12860, 13231, 13572, 13968, 14040, 15082, 15567, 16367, 16816, 16830, 17352, 17393, 17417, 17809, 18036, 18292, 18381, 18617, 18717, 18749, 19180, 19400, 19479, 20117, 20133, 20345, 20967, 21044, 21311, 21402, 21519, 21684, 21785, 21988, 22029, 22340],
+    "replacement_task_ids": [21614, 3787, 4742, 21841, 4224, 3539, 23290, 19016, 14432, 9819, 21480, 9375, 10807, 3647, 5331, 14015, 18700, 21298, 15986, 22709, 22269, 19490, 15496, 22547, 14517, 448, 984, 20661, 1848, 6868, 4058, 22036, 19683, 7684, 21365, 19069, 1627, 8815, 7726, 21722, 10176, 8811, 563, 8486, 14797, 19278, 4474, 7377, 11543, 6152, 18125, 13625, 10912, 1050, 6380, 5404, 12118, 7506, 1705, 303, 18372, 5023, 7011, 16408, 5838, 8263, 15781, 6018, 8536, 7394, 6219, 7826, 15692, 22757, 16195, 11550, 1982, 2296, 14857, 2734, 5049],
+    "selection": "Stratified by Reward v3 hard-constraint count using seed 20260813. Every replacement has a reachable target gold_purchase, resolved gold option axes, a deterministic target variant price, a parsed price constraint whenever the query mentions price, and zero overlap with active SFT, pure-SFT, and GRPO task IDs."
   }
 }

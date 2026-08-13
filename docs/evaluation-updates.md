@@ -4,6 +4,26 @@
 证据、对历史结果的影响，以及是否重新运行了 rollout。完整原始轨迹是本地
 `outputs/evaluation/` 产物，不提交到 Git；这里保存可复核的汇总和 bad-case 结论。
 
+## 2026-08-13 — Final-200 Clean 补齐并取代 Final-183
+
+### 数据集变更
+
+- 当前集：Final-200 Clean，200 题，SHA-256
+  `d99112a20ef47534c27a32e4b38229bf048dcc6b06fef2e3e919aac3093662f5`。
+- 从 Final-183 保留 119 题，移除 64 道遗留问题题，并补入 81 道新任务；相对原始
+  Final-200，一共永久排除 81 个 source task ID，完整清单和补题 ID 见
+  [Final-200 Clean 说明](evaluation-dataset.md)。
+- 新发现：原始轨迹审计识别的 17 题之外，还有 60 题的 Query 明确提出价格、但 Reward v3
+  没有解析预算；另有 3 题目标价超出已解析预算，1 题的 Query 和 gold 尺寸/花色相互矛盾。
+- 补题方法：在冻结任务池中排除所有当前训练 task ID 后，按被替换题的硬约束数量分层、固定
+  seed `20260813` 抽样。每道补题都通过目标 `gold_purchase`、规格可解析、variant 价格可解、
+  已声明预算可解析且通过的静态核验。
+
+### 对历史结果的影响
+
+此前的 Final-183 分母重算仅可作为归档审计，不能转换成 Final-200 Clean 成绩；新 81 题从未
+在那些 rollout 中运行。之后所有模型都应在 Final-200 Clean 上以相同运行时重新 rollout。
+
 ## 2026-08-13 — Final-183 取代 Final-200
 
 ### 数据集变更

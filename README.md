@@ -14,11 +14,11 @@
 [![LoRA SFT](https://img.shields.io/badge/Post--training-LoRA%20SFT-7B61FF)](docs/sft.md)
 [![veRL](https://img.shields.io/badge/veRL-0.8.0-0E8A16)](https://github.com/verl-project/verl)
 [![ShopSimulator](https://img.shields.io/badge/Environment-ShopSimulator%20v2.1-4C78A8)](https://arxiv.org/pdf/2601.18225)
-[![Benchmark](https://img.shields.io/badge/Benchmark-Final--183-F59E0B)](docs/evaluation-dataset.md)
+[![Benchmark](https://img.shields.io/badge/Benchmark-Final--200--Clean-F59E0B)](docs/evaluation-dataset.md)
 
 <br />
 
-教师轨迹与 LoRA SFT → veRL 在线 GRPO → Final-183 Benchmark 的可审计对比
+教师轨迹与 LoRA SFT → veRL 在线 GRPO → Final-200 Clean Benchmark 的可审计对比
 
 </div>
 
@@ -56,7 +56,7 @@ flowchart LR
     C --> D[LoRA SFT]
     D --> E[veRL 在线 GRPO]
     F[ShopSimulator v2.1] --> E
-    G[Final-183 测试任务] --> H[统一评估流水线]
+    G[Final-200 Clean 测试任务] --> H[统一评估流水线]
     I[Base Model] --> H
     D --> H
     E --> H
@@ -67,7 +67,7 @@ flowchart LR
 | Baseline | 测量原始 Qwen3.5-2B 的工具使用能力 | `bash scripts/baseline.sh` | [评估](docs/evaluation.md) |
 | SFT | 从高质量教师轨迹学习合法、完整的购物行为 | `bash scripts/sft.sh` | [SFT](docs/sft.md) |
 | GRPO | 在真实环境 Rollout 中优化 Reward v3 | `bash scripts/grpo.sh` | [GRPO](docs/grpo.md) |
-| Evaluation | 使用同一批 Final-183 留出任务公平比较模型 | `bash scripts/evaluate.sh NAME` | [评估](docs/evaluation.md) |
+| Evaluation | 使用同一批 Final-200 Clean 留出任务公平比较模型 | `bash scripts/evaluate.sh NAME` | [评估](docs/evaluation.md) |
 
 ### SFT 数据是怎么收集的？
 
@@ -77,7 +77,7 @@ Environment v2.1 中采集：
 - 共获得 2,498 条原始任务轨迹；
 - 每条轨迹在采集时都真实执行环境动作，再按 Reward v3 终局结果验收；
 - 其中 1,026 条通过严格验收，本次固定使用 1,000 条；
-- 最终划分为 800 条训练数据和 200 条验证数据，并与 GRPO、Final-183
+- 最终划分为 800 条训练数据和 200 条验证数据，并与 GRPO、Final-200 Clean
   保持 task_id 零重叠。
 
 仓库已提供可断点续跑的采集入口：
@@ -126,7 +126,7 @@ flowchart TD
     C --> D["V4 Flash 整理并冻结 Rubric"]
     A --> E["Actor + ShopSimulator Rollout"]
     E --> F["轨迹规范化 + Action Guard + 确定性硬检查"]
-    F -->|基础设施无效| G["not_judged，仍计入 Final-183 分母"]
+    F -->|基础设施无效| G["not_judged，仍计入 Final-200 Clean 分母"]
     F -->|检查通过| H["移除 Reward、Gold、raw observation"]
     D --> H
     H --> I["V4 Pro 逐需求判断 + 五维评分 + 错误分类"]
@@ -150,17 +150,17 @@ Pro 看不到 Reward 分数、Gold 商品私有字段、raw Observation、成功
 3. Pro Judge 五维分布与错误类型；
 4. 步数、工具、Guard、重复、上下文和基础设施指标。
 
-四部分不会合成一个总分。缺失、报错和 `not_judged` 任务仍保留在 Final-183 分母中。
+四部分不会合成一个总分。缺失、报错和 `not_judged` 任务仍保留在 Final-200 Clean 分母中。
 完整数据流、两个模型的完整 Prompt、输入隔离规则、示例 Rubric 和最终统计口径见
 [评估流水线文档](docs/evaluation.md)。当前集的筛选依据见
-[Final-183 说明](docs/evaluation-dataset.md)；[Final-200 Dashboard](docs/evaluation-dashboard.html)
+[Final-200 Clean 说明](docs/evaluation-dataset.md)；[Final-200 Dashboard（历史）](docs/evaluation-dashboard.html)
 只保留为历史归档。
 
 
 
 ## 实验结果
 
-以下是历史 Final-200 的归档结果；当前横向比较统一使用 Final-183：
+以下是历史 Final-200 的归档结果；当前横向比较统一使用 Final-200 Clean：
 
 | 模型 | 严格成功率 | 购买成功率 | 平均 Reward |
 |---|---:|---:|---:|
@@ -330,7 +330,7 @@ configs/                         当前 GRPO、AgentLoop 和工具配置
 data/
   sft/                           800 条训练 + 200 条验证轨迹
   grpo/                          JSONL 与 veRL Parquet 数据
-  evaluation/                    Final-183 留出任务
+  evaluation/                    Final-200 Clean 留出任务
 docs/                            数据、SFT、GRPO、评估与 Reward 文档
 environments/ShopSimulator/      内嵌环境源码和商品数据
 experiments/
@@ -379,7 +379,7 @@ bash scripts/grpo.sh --logger swanlab
 - [LoRA SFT](docs/sft.md)
 - [使用 veRL 进行 GRPO](docs/grpo.md)
 - [留出集评估](docs/evaluation.md)
-- [Final-183 测试集说明](docs/evaluation-dataset.md)
+- [Final-200 Clean 测试集说明](docs/evaluation-dataset.md)
 - [Final-200 Benchmark Dashboard（历史）](docs/evaluation-dashboard.html)
 - [Reward v3 设计](docs/reward-v3.md)
 - [可审计实验结果](experiments/comparison.md)

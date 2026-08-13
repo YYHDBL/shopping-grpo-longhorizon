@@ -6,7 +6,7 @@ Only the datasets used by the tutorial are kept here.
 |---|---|---:|
 | SFT | `sft/train.jsonl`, `sft/validation.jsonl` | 800 / 200 |
 | GRPO | `grpo/train.parquet`, `grpo/validation.parquet` | 1000 / 50 |
-| Evaluation | `evaluation/tasks.jsonl` (Final-183) | 183 |
+| Evaluation | `evaluation/tasks.jsonl` (Final-200 Clean) | 200 |
 
 Adjacent `metadata.json` files record SHA256 checksums and collection
 provenance. All SFT, GRPO and evaluation splits are task-disjoint. Generated
