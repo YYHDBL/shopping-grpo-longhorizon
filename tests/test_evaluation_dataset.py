@@ -23,8 +23,8 @@ from web_agent_site.engine.variant_price import (
 
 PRICE_HINT = re.compile(
     r"(?:预算|价格|售价|价钱|价位|总价|费用|成本|花费|多少钱|"
-    r"[零一二三四五六七八九十百千万两\\d]+(?:\\.\\d+)?\\s*(?:元|块|钱)|"
-    r"\\d+(?:\\.\\d+)?\\s*(?:左右|上下|出头))"
+    r"[零一二三四五六七八九十百千万两\d]+(?:\.\d+)?\s*(?:元|块|钱)|"
+    r"\d+(?:\.\d+)?\s*(?:左右|上下|出头))"
 )
 EXCLUDED_SOURCE_TASK_IDS = {
     1212, 1520, 2352, 3025, 3038, 3247, 3368, 3797, 4071, 4169,
@@ -40,6 +40,9 @@ EXCLUDED_SOURCE_TASK_IDS = {
 
 
 class EvaluationDatasetTests(unittest.TestCase):
+    def test_price_hint_detects_numeric_price_without_keyword(self):
+        self.assertIsNotNone(PRICE_HINT.search("控制在15元以内"))
+
     def test_final_200_clean_manifest_and_blind_guard_match(self):
         tasks_path = ROOT / "data/evaluation/tasks.jsonl"
         task_bytes = tasks_path.read_bytes()
