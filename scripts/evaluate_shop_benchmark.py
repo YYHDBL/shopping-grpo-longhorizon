@@ -28,14 +28,24 @@ def parse_args():
         default=512,
         help="单次模型生成上限；防止未调用工具时耗尽完整上下文。",
     )
-    parser.add_argument("--context-window", type=int, default=24576)
+    parser.add_argument(
+        "--context-window",
+        type=int,
+        default=24576,
+        help="上下文窗口；传 0 禁用 vLLM /tokenize 依赖。",
+    )
     parser.add_argument("--context-safety-margin", type=int, default=512)
     parser.add_argument(
         "--context-compaction",
         action="store_true",
         help="上下文接近上限时压缩较早的交互；默认关闭。",
     )
-    parser.add_argument("--observation-token-budget", type=int, default=1536)
+    parser.add_argument(
+        "--observation-token-budget",
+        type=int,
+        default=1536,
+        help="Observation token 预算；传 0 禁用 vLLM /tokenize 依赖。",
+    )
     parser.add_argument("--observation-detail-token-budget", type=int, default=4096)
     parser.add_argument("--observation-generic-token-budget", type=int, default=768)
     parser.add_argument("--observation-search-top-k", type=int, default=20)
@@ -56,8 +66,12 @@ def main():
         raise SystemExit("--max-steps 必须为正数")
     if args.max_tokens < 1:
         raise SystemExit("--max-tokens 必须为正数")
-    if args.context_window <= args.max_tokens + args.context_safety_margin:
+    if args.context_window < 0:
+        raise SystemExit("--context-window 不能为负数")
+    if args.context_window and args.context_window <= args.max_tokens + args.context_safety_margin:
         raise SystemExit("--context-window 必须大于 --max-tokens 与安全余量之和")
+    if args.observation_token_budget < 0:
+        raise SystemExit("--observation-token-budget 不能为负数")
     tasks = load_tasks(args.benchmark)
     client = OpenAIChatClient(
         model=args.model,

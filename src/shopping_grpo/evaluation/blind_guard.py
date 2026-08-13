@@ -16,8 +16,8 @@ BLIND_TASK_IDS_SCHEMA = "shopping-blind-task-ids-v1"
 _RESOURCE_PACKAGE = "shopping_grpo.resources"
 _GUARD_RESOURCE = "blind_guard.json"
 _EXPECTED_METADATA = {
-    "asset": "shop_benchmark_reward_v3_final_200",
-    "contract": "environment-v2.1/reward-v3/fresh-v1",
+    "asset": "shop_benchmark_reward_v3_final_183",
+    "contract": "environment-v2.1/reward-v3/curated-final183-v1",
     "environment_version": "shopsimulator-environment-v2.1",
     "reward_version": "shopsimulator-reward-v3",
     "evaluated": False,

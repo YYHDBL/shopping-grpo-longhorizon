@@ -1,6 +1,7 @@
 # Evaluation：从一条 Benchmark Test 到最终比较
 
-配套的可视化页面：[Final-200 Benchmark Dashboard](evaluation-dashboard.html)。
+当前正式分母为 [Final-183](evaluation-dataset.md)。旧的
+[Final-200 Benchmark Dashboard](evaluation-dashboard.html) 仅保留为历史归档。
 
 本项目的正式评估不是“让一个模型看结果后打一个总分”，而是由代码硬检查、
 DeepSeek V4 Flash Rubric 整理器、DeepSeek V4 Pro 轨迹 Judge 和最终聚合器组成。
@@ -13,7 +14,7 @@ DeepSeek V4 Flash Rubric 整理器、DeepSeek V4 Pro 轨迹 Judge 和最终聚�
 
 ```mermaid
 flowchart TD
-    A["Frozen benchmark<br/>200 × task_id"] --> B["从 ShopSimulator 导出私有 TaskFacts<br/>Query + 目标商品结构化事实"]
+    A["Final-183 benchmark<br/>183 × task_id"] --> B["从 ShopSimulator 导出私有 TaskFacts<br/>Query + 目标商品结构化事实"]
     B --> C["代码提取 Rubric 候选<br/>category / brand / model / function / option / price"]
     C --> D["DeepSeek V4 Flash<br/>只能筛选、去重、描述和标注 hard/soft"]
     D --> E["Schema + candidate_id + Query span + hash 校验"]
@@ -22,14 +23,14 @@ flowchart TD
     A --> G["Actor 在 ShopSimulator 执行一次 Rollout"]
     G --> H["规范化轨迹并生成稳定 event_id"]
     H --> I["代码硬检查<br/>Reward / terminal / legality / repetition / context / infrastructure"]
-    I -->|infrastructure_invalid| J["not_judged<br/>仍保留在 200 题分母"]
+    I -->|infrastructure_invalid| J["not_judged<br/>仍保留在 183 题分母"]
     I -->|valid| K["构建 Judge-safe 输入<br/>移除 Reward、Gold 和 raw observation"]
     F --> K
     K --> L["DeepSeek V4 Pro<br/>逐 Rubric 判断 + 五维轨迹评分 + 错误分类"]
     L --> M["JSON Schema、event_id、rubric_id、模型与请求 Hash 校验"]
     J --> N["四面板结果拼装"]
     M --> N
-    N --> O["固定 200 题分母汇总"]
+    N --> O["固定 183 题分母汇总"]
     O --> P["按 task_id 配对比较<br/>Baseline ↔ SFT ↔ GRPO"]
 ```
 
@@ -39,7 +40,7 @@ Rubric 只需要为每个任务生成一次；它不依赖某个 Actor 的轨迹
 
 ## 2. Benchmark 中的一条 Test
 
-正式 Final-200 文件只公开任务 ID，防止将盲测 Query 或目标商品意外送入训练流程：
+正式 Final-183 文件只公开任务 ID，防止将盲测 Query 或目标商品意外送入训练流程：
 
 ```json
 {"task_id": 8187}
@@ -55,12 +56,12 @@ TaskFacts 还包含目标商品的 category、title、brand、pricing、attribut
 customization options，以及 Reward v3 已编译的结构化需求。它们用于生成候选约束，
 但目标商品私有字段不会进入 Actor，也不会直接进入 Pro Judge。
 
-Final-200 的约束如下：
+Final-183 的约束如下：
 
-- 200 个任务；
+- 183 个任务；
 - 与 SFT、GRPO train/validation 和历史 benchmark 零重叠；
 - SHA-256：
-  `2c4ff070e13ddc30796d38e85170210e7d3c211992425a62090f2419fe8e0208`；
+  `0d723a9fcf95d026c79c83b833eec2cb85aa49013da5f661cd1cb581aede773a`；
 - 不用于 Prompt 调优、Rubric/Judge 校准或 checkpoint 选择；
 - 每个模型每题一次确定性 Rollout。
 
@@ -175,7 +176,7 @@ GRPO 共用同一份。
 | `r0004` | hard | 应选择“【卡通-永结同心】2个装” |
 | `r0005` | soft | 价格倾向于 20 元左右 |
 
-正式 200 题最终生成了 200 个 Rubric bundles，共 1,265 条需求约束。
+正式评测为每个 Final-183 任务生成一个 Rubric bundle；该 bundle 在模型之间冻结共享。
 
 ## 4. Actor Rollout
 
@@ -215,7 +216,7 @@ LLM Judge 之前先进行确定性预处理：
 8. 检查 release error、任务缺失及其他 `infrastructure_invalid` 情况。
 
 如果轨迹被判为 `infrastructure_invalid`，系统直接生成 `not_judged`，不会要求 Pro
-猜一个分数，但该任务仍留在固定 200 题分母中。
+猜一个分数，但该任务仍留在固定 183 题分母中。
 
 ## 6. 第二位 LLM：V4 Pro 评价完整轨迹
 
@@ -346,7 +347,7 @@ Reward 与 Rubric 冲突时两者都保留。例如 Reward 判为 gold，但 Rub
 - Observation 截断和上下文使用；
 - infrastructure-invalid 数量及 task IDs。
 
-汇总时始终以 200 为固定分母。最后按 `task_id` 对 Baseline、SFT、GRPO 做配对比较，
+汇总时始终以 183 为固定分母。最后按 `task_id` 对 Baseline、SFT、GRPO 做配对比较，
 统计成功状态迁移、Reward type 迁移、hard violation 差值、五维分数差值、步数、
 Guard 和重复动作变化；仍然不生成一个综合总分。
 
@@ -371,7 +372,7 @@ src/shopping_grpo/evaluation/
   prompts.py          两个冻结 Prompt 和 Judge-safe 输入
   model_client.py     OpenAI-compatible JSON 请求
   contracts.py        Rubric/Judge Schema 严格校验
-  blind_guard.py      Final-200 内容与 task-ID 防泄漏
+  blind_guard.py      Final-183 内容与 task-ID 防泄漏
   results.py          四面板拼装和固定分母汇总
   comparison.py       Baseline/SFT/GRPO 配对比较
 ```

@@ -1,9 +1,25 @@
 {
-  "schema_version": "shopping-evaluation-dataset-v1",
+  "schema_version": "shopping-evaluation-dataset-v2",
+  "name": "Final-183",
+  "asset": "shop_benchmark_reward_v3_final_183",
+  "contract": "environment-v2.1/reward-v3/curated-final183-v1",
   "environment": "shopsimulator-environment-v2.1",
+  "environment_version": "shopsimulator-environment-v2.1",
   "reward": "shopsimulator-reward-v3",
+  "reward_version": "shopsimulator-reward-v3",
+  "evaluated": false,
   "path": "data/evaluation/tasks.jsonl",
-  "tasks": 200,
-  "sha256": "2c4ff070e13ddc30796d38e85170210e7d3c211992425a62090f2419fe8e0208",
-  "training_overlap": 0
+  "tasks": 183,
+  "sha256": "0d723a9fcf95d026c79c83b833eec2cb85aa49013da5f661cd1cb581aede773a",
+  "training_overlap": 0,
+  "source": {
+    "name": "Final-200",
+    "tasks": 200,
+    "sha256": "2c4ff070e13ddc30796d38e85170210e7d3c211992425a62090f2419fe8e0208"
+  },
+  "curation": {
+    "date": "2026-08-13",
+    "excluded_task_ids": [2352, 3368, 4071, 4786, 4925, 5475, 5510, 5703, 5904, 6143, 6520, 11168, 11773, 12860, 19180, 20345, 21785],
+    "reason": "Removed tasks with impossible Reward v3 outcomes, query-gold contradictions or hidden gold constraints, and gold prices made impossible by strict parsing of colloquial budgets."
+  }
 }
