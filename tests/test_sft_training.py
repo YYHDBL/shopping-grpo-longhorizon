@@ -222,6 +222,34 @@ class SftTrainingTest(unittest.TestCase):
         self.assertEqual(examples[0]["task_id"], 1)
         self.assertEqual(stats, {"total": 2, "kept": 1, "dropped": 1})
 
+    def test_loader_filters_task_ids_before_tokenization(self):
+        rows = [
+            {
+                "task_id": task_id,
+                "tools": [],
+                "messages": [
+                    {"role": "user", "content": "buy"},
+                    {"role": "assistant", "content": "done"},
+                ],
+            }
+            for task_id in (1, 2)
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "sft.jsonl"
+            source.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            examples, stats = load_supervised_examples(
+                source,
+                tokenizer=CharacterTokenizer(),
+                max_length=1_000,
+                task_ids={2},
+            )
+
+        self.assertEqual([example["task_id"] for example in examples], [2])
+        self.assertEqual(stats["total"], 2)
+        self.assertEqual(stats["filtered_out"], 1)
+
     def test_split_keeps_same_task_out_of_both_train_and_validation(self):
         """同一 task 的多次轨迹不能跨 train/validation，避免评估泄漏。"""
         rows = [

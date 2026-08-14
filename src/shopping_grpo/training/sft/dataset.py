@@ -126,7 +126,13 @@ def build_supervised_example(messages, tools, tokenizer, max_length=8192, chat_t
     }
 
 
-def load_supervised_examples(path, tokenizer, max_length=8192, chat_template=None):
+def load_supervised_examples(
+    path,
+    tokenizer,
+    max_length=8192,
+    chat_template=None,
+    task_ids=None,
+):
     """读取本仓库生成的 SFT JSONL，并报告被模板拒绝的样本数。"""
     try:
         from tqdm import tqdm as _tqdm
@@ -135,12 +141,21 @@ def load_supervised_examples(path, tokenizer, max_length=8192, chat_template=Non
 
     examples = []
     stats = {"total": 0, "kept": 0, "dropped": 0}
+    requested_ids = {int(task_id) for task_id in task_ids} if task_ids is not None else None
+    if requested_ids is not None:
+        stats["filtered_out"] = 0
+        stats["matched"] = 0
     text = Path(path).read_text(encoding="utf-8")
     lines = [l for l in text.splitlines() if l.strip()]
     stats["total"] = len(lines)
     for line in _tqdm(lines, desc=f"  Tokenizing {Path(path).name}", unit=" samples"):
         try:
             row = json.loads(line)
+            if requested_ids is not None and int(row["task_id"]) not in requested_ids:
+                stats["filtered_out"] += 1
+                continue
+            if requested_ids is not None:
+                stats["matched"] += 1
             example = build_supervised_example(
                 messages=row["messages"],
                 tools=row.get("tools") or [],

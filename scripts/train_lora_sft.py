@@ -36,6 +36,18 @@ def parse_args():
     parser.add_argument("--model", required=True, help="Hugging Face 模型名或本地模型目录")
     parser.add_argument("--train", type=Path, required=True, help="训练 SFT JSONL")
     parser.add_argument("--validation", type=Path, default=None, help="可选验证 SFT JSONL")
+    parser.add_argument(
+        "--curriculum-manifest",
+        type=Path,
+        default=None,
+        help="可选课程清单；与 --curriculum-stage 一起按 task_id 选择数据。",
+    )
+    parser.add_argument(
+        "--curriculum-stage",
+        choices=("a", "b", "c"),
+        default=None,
+        help="课程阶段；训练/验证都从同一 manifest 的累计 bucket 中读取。",
+    )
     parser.add_argument("--output", type=Path, required=True, help="LoRA adapter 输出目录")
     # 24k 可保留当前真实轨迹的约 93%，48G 显存配合 batch=1 与梯度检查点可稳定训练。
     parser.add_argument("--max-length", type=int, default=24576)
@@ -92,6 +104,20 @@ def parse_args():
         help="SwanLab 在线同步或只保存在本地；仅 --swanlab 时生效。",
     )
     return parser.parse_args()
+
+
+def _curriculum_task_ids(path, stage, split):
+    manifest = json.loads(Path(path).read_text(encoding="utf-8"))
+    try:
+        bucket_names = manifest["stages"][stage]["buckets"]
+        key = f"{split}_task_ids"
+        return {
+            int(task_id)
+            for bucket_name in bucket_names
+            for task_id in manifest["buckets"][bucket_name][key]
+        }
+    except (KeyError, TypeError) as exc:
+        raise SystemExit(f"课程清单缺少阶段 {stage!r} 的 {split} task IDs") from exc
 
 
 def _training_dependencies():
@@ -314,6 +340,18 @@ def main():
     args = parse_args()
     if args.max_length < 1 or args.epochs <= 0:
         raise SystemExit("--max-length 与 --epochs 必须为正数")
+    if bool(args.curriculum_manifest) != bool(args.curriculum_stage):
+        raise SystemExit("--curriculum-manifest 与 --curriculum-stage 必须一起提供")
+    if args.curriculum_manifest and not args.validation:
+        raise SystemExit("课程训练必须提供 --validation（通常与 --train 指向同一 Pure V4 文件）")
+    train_task_ids = validation_task_ids = None
+    if args.curriculum_manifest:
+        train_task_ids = _curriculum_task_ids(
+            args.curriculum_manifest, args.curriculum_stage, "train"
+        )
+        validation_task_ids = _curriculum_task_ids(
+            args.curriculum_manifest, args.curriculum_stage, "validation"
+        )
     try:
         guard_blind_final(
             [args.train, *([args.validation] if args.validation else [])],
@@ -391,7 +429,10 @@ def main():
         tokenizer=tokenizer,
         chat_template=chat_template,
         max_length=args.max_length,
+        task_ids=train_task_ids,
     )
+    if train_task_ids is not None and train_stats["matched"] != len(train_task_ids):
+        raise SystemExit("课程清单中的训练 task_id 未全部出现在 --train 数据中")
     try:
         train_examples = select_training_examples(
             train_examples,
@@ -412,7 +453,12 @@ def main():
             tokenizer=tokenizer,
             chat_template=chat_template,
             max_length=args.max_length,
+            task_ids=validation_task_ids,
         )
+        if validation_task_ids is not None and validation_stats["matched"] != len(
+            validation_task_ids
+        ):
+            raise SystemExit("课程清单中的验证 task_id 未全部出现在 --validation 数据中")
         print("validation_data=", validation_stats)
         if not validation_examples:
             raise SystemExit("验证集没有可用样本；请调整划分或 --max-length")

@@ -1,7 +1,9 @@
 """验证 LoRA SFT 入口的关键默认值。"""
 
 import os
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +16,7 @@ from scripts.train_lora_sft import (
     _prepare_model_for_training,
     _resolve_dtype,
     _swanlab_config,
+    _curriculum_task_ids,
     parse_args,
 )
 
@@ -85,6 +88,26 @@ class _FakeTrainer:
 
 
 class TrainLoraSftCliTest(unittest.TestCase):
+    def test_curriculum_manifest_expands_cumulative_stage_ids(self):
+        manifest = {
+            "stages": {"b": {"buckets": ["foundation", "constraints"]}},
+            "buckets": {
+                "foundation": {
+                    "train_task_ids": [1],
+                    "validation_task_ids": [2],
+                },
+                "constraints": {
+                    "train_task_ids": [3],
+                    "validation_task_ids": [4],
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(_curriculum_task_ids(path, "b", "train"), {1, 3})
+            self.assertEqual(_curriculum_task_ids(path, "b", "validation"), {2, 4})
+
     def test_defaults_are_suitable_for_small_qwen_lora_warmup(self):
         with patch.object(
             sys,
@@ -97,6 +120,10 @@ class TrainLoraSftCliTest(unittest.TestCase):
                 "outputs/batch/train.jsonl",
                 "--output",
                 "checkpoints/qwen-shopping-lora",
+                "--curriculum-manifest",
+                "data/sft_curriculum/manifest.json",
+                "--curriculum-stage",
+                "b",
             ],
         ):
             args = parse_args()
@@ -113,6 +140,11 @@ class TrainLoraSftCliTest(unittest.TestCase):
         self.assertFalse(args.bf16)
         self.assertFalse(args.swanlab)
         self.assertEqual(args.swanlab_project, "shopping-grpo")
+        self.assertEqual(
+            args.curriculum_manifest,
+            Path("data/sft_curriculum/manifest.json"),
+        )
+        self.assertEqual(args.curriculum_stage, "b")
 
     def test_swanlab_flags_are_opt_in_and_keep_a_stable_run_name(self):
         """国内监控必须显式启用，且实验名可由调用方固定以便对比。"""
