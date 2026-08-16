@@ -81,6 +81,7 @@ class OpenAIChatClient:
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
+        self.responses_api = self.base_url.endswith("/responses")
         self.api_key = api_key
         self.temperature = float(temperature)
         self.top_p = float(top_p)
@@ -150,15 +151,24 @@ class OpenAIChatClient:
                 )
                 if stats.removed_groups:
                     self.last_context_event = stats.to_dict()
-        payload = {
-            "model": self.model,
-            "messages": request_messages,
-            "tools": tools,
-            "tool_choice": "auto",
-            # 约束单个 assistant 回合的输出；--max-model-len 只限制上下文，
-            # 不能防止模型在未调用工具时持续生成纯文本。
-            "max_tokens": self.max_tokens,
-        }
+        if self.responses_api:
+            payload = {
+                "model": self.model,
+                "input": _responses_input(request_messages),
+                "tools": _responses_tools(tools),
+                "tool_choice": "auto",
+                "max_output_tokens": self.max_tokens,
+            }
+        else:
+            payload = {
+                "model": self.model,
+                "messages": request_messages,
+                "tools": tools,
+                "tool_choice": "auto",
+                # 约束单个 assistant 回合的输出；--max-model-len 只限制上下文，
+                # 不能防止模型在未调用工具时持续生成纯文本。
+                "max_tokens": self.max_tokens,
+            }
         if self.thinking:
             # DeepSeek tool-call thinking requires reasoning_content in later messages.
             payload.update(
@@ -180,7 +190,7 @@ class OpenAIChatClient:
             # 避免 Cloudflare 将 Python urllib 默认客户端识别为自动化流量。
             "User-Agent": "shopping-grpo-longhorizon/0.1",
         }
-        url = f"{self.base_url}/chat/completions"
+        url = self.base_url if self.responses_api else f"{self.base_url}/chat/completions"
         for attempt in range(MODEL_COMPLETION_RETRIES + 1):
             try:
                 if self.transport is not None:
@@ -194,7 +204,7 @@ class OpenAIChatClient:
                     )
                     with urlopen(request, timeout=self.timeout) as raw:
                         response = json.loads(raw.read().decode("utf-8"))
-                return _response_message(response)
+                return _response_message(response, responses_api=self.responses_api)
             except (RemoteDisconnected, TimeoutError, URLError):
                 if attempt >= MODEL_COMPLETION_RETRIES:
                     raise
@@ -577,10 +587,92 @@ def _tool_call_name_args(tool_call):
     return name, arguments
 
 
-def _response_message(response):
+def _response_message(response, responses_api=False):
+    if responses_api:
+        return _responses_message(response)
     choice = response["choices"][0]
     message = choice["message"]
     return _plain(message)
+
+
+def _responses_tools(tools):
+    """将 Chat Completions function schema 转为 Responses function schema。"""
+    converted = []
+    for tool in tools or []:
+        function = tool.get("function") or {}
+        converted.append(
+            {
+                "type": "function",
+                "name": function.get("name"),
+                "description": function.get("description", ""),
+                "parameters": function.get("parameters") or {"type": "object"},
+                "strict": True,
+            }
+        )
+    return converted
+
+
+def _responses_input(messages):
+    """将内部 Chat 消息转换为 Responses input items。"""
+    converted = []
+    for message in messages:
+        role = message.get("role")
+        if role == "tool":
+            converted.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": message.get("tool_call_id"),
+                    "output": str(message.get("content", "")),
+                }
+            )
+            continue
+        tool_calls = message.get("tool_calls") or []
+        if role == "assistant" and tool_calls:
+            for tool_call in tool_calls:
+                function = tool_call.get("function") or {}
+                converted.append(
+                    {
+                        "type": "function_call",
+                        "call_id": tool_call.get("id"),
+                        "name": function.get("name"),
+                        "arguments": function.get("arguments") or "{}",
+                    }
+                )
+            continue
+        if role in {"system", "user", "assistant"}:
+            converted.append(
+                {
+                    "role": role,
+                    "content": str(message.get("content") or ""),
+                }
+            )
+    return converted
+
+
+def _responses_message(response):
+    """将 Responses output items 还原为现有 rollout 循环使用的 assistant 消息。"""
+    tool_calls = []
+    text_parts = []
+    for item in response.get("output") or []:
+        if item.get("type") == "function_call":
+            tool_calls.append(
+                {
+                    "id": item.get("call_id") or item.get("id"),
+                    "type": "function",
+                    "function": {
+                        "name": item.get("name"),
+                        "arguments": item.get("arguments") or "{}",
+                    },
+                }
+            )
+        elif item.get("type") == "message":
+            for content in item.get("content") or []:
+                if content.get("type") in {"output_text", "text"}:
+                    text_parts.append(content.get("text", ""))
+    message = {"role": "assistant", "content": "\n".join(text_parts) or None}
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+    return message
 
 
 def _plain(value):

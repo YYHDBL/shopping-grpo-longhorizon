@@ -644,6 +644,74 @@ class RolloutTest(unittest.TestCase):
         self.assertEqual(captured["headers"]["Authorization"], "Bearer secret")
         self.assertEqual(captured["headers"]["User-Agent"], "shopping-grpo-longhorizon/0.1")
 
+    def test_openai_client_supports_responses_tool_payload_and_result(self):
+        captured = {}
+
+        def transport(url, payload, headers, timeout):
+            captured.update({"url": url, "payload": payload})
+            return {
+                "output": [
+                    {
+                        "type": "function_call",
+                        "call_id": "call_search",
+                        "name": "search_products",
+                        "arguments": '{"query":"乳胶枕"}',
+                    }
+                ]
+            }
+
+        client = OpenAIChatClient(
+            model="gpt-5.6-luna",
+            base_url="https://opencode.ai/zen/go/v1/responses",
+            api_key="secret",
+            transport=transport,
+        )
+        messages = [
+            {"role": "system", "content": "rules"},
+            {"role": "user", "content": "买乳胶枕"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_old",
+                        "type": "function",
+                        "function": {
+                            "name": "search_products",
+                            "arguments": '{"query":"枕头"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_old",
+                "name": "search_products",
+                "content": "search result",
+            },
+        ]
+        message = client.complete(
+            messages,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_products",
+                        "description": "search",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(captured["url"], "https://opencode.ai/zen/go/v1/responses")
+        self.assertEqual(captured["payload"]["max_output_tokens"], 512)
+        self.assertEqual(captured["payload"]["tools"][0]["name"], "search_products")
+        self.assertEqual(captured["payload"]["input"][-1]["type"], "function_call_output")
+        self.assertEqual(captured["payload"]["input"][-1]["call_id"], "call_old")
+        self.assertEqual(message["tool_calls"][0]["id"], "call_search")
+        self.assertEqual(message["tool_calls"][0]["function"]["name"], "search_products")
+
     def test_openai_client_allows_bounded_completion_override(self):
         """本地推理服务必须收到单次生成上限，避免无工具文本耗尽上下文。"""
         captured = {}
