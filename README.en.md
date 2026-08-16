@@ -395,3 +395,9 @@ The repository organization and tutorial presentation were informed by
 [qiqihezh/agentic-grpo-longhorizon](https://github.com/qiqihezh/agentic-grpo-longhorizon).
 Thanks to the [OpenCode Go plan](https://dev.opencode.ai/go) for supporting the
 development workflow.
+
+### Contributors
+
+<a href="https://github.com/Guochangwei917">
+  <img src="https://github.com/Guochangwei917.png?size=80" width="80px;" alt="Guochangwei917"/>
+</a>

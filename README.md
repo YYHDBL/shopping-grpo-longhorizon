@@ -416,3 +416,9 @@ bash scripts/grpo.sh --logger swanlab
 仓库结构和教程呈现参考了
 [qiqihezh/agentic-grpo-longhorizon](https://github.com/qiqihezh/agentic-grpo-longhorizon)。
 感谢 [OpenCode Go 套餐](https://dev.opencode.ai/go) 对开发工作的支持。
+
+### Contributors
+
+<a href="https://github.com/Guochangwei917">
+  <img src="https://github.com/Guochangwei917.png?size=80" width="80px;" alt="Guochangwei917"/>
+</a>
