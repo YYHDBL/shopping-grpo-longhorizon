@@ -146,6 +146,14 @@ historical static view is available in the [Final-200 Benchmark Dashboard](docs/
 
 ## Results
 
+A contributor reproduction is now available on the current Final-200 Clean
+benchmark. See the [evaluation update log](docs/evaluation-updates.md) for the
+full protocol, failure distribution and artifact hashes:
+
+| Model | Strict success | Purchase success | Done rate | Mean reward |
+|---|---:|---:|---:|---:|
+| Qwen3.8-27B (BF16 weights, thinking disabled) | 73.0% | 73.0% | 99.5% | 0.6354 |
+
 The following are archived Final-200 results; new comparisons use Final-200 Clean:
 
 | Model | Strict success | Purchase success | Mean reward |
