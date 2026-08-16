@@ -23,6 +23,7 @@ TOOL_LABELS = {
     "back_to_search": "返回搜索",
     "next_page": "下一页",
     "buy_now": "购买",
+    "finish_without_purchase": "主动结束",
 }
 REWARD_LABELS = {
     "gold_purchase": "严格成功购买",
@@ -30,6 +31,7 @@ REWARD_LABELS = {
     "wrong_purchase": "错误购买",
     "repeat_loop": "重复循环",
     "max_steps": "达到步数上限",
+    "early_abstain": "过早放弃",
     "unknown": "未完成 / 无终局",
 }
 
@@ -116,6 +118,7 @@ def build_data(run_dir):
             {"key": "wrong_purchase", "label": "错误购买", "value": reward_counts["wrong_purchase"]},
             {"key": "repeat_loop", "label": "重复循环", "value": reward_counts["repeat_loop"]},
             {"key": "max_steps", "label": "达到步数上限", "value": reward_counts["max_steps"]},
+            {"key": "early_abstain", "label": "过早放弃", "value": reward_counts["early_abstain"]},
             {"key": "unknown", "label": "未完成 / 无终局", "value": reward_counts["unknown"]},
         ],
         "tools": [
@@ -148,6 +151,7 @@ def build_data(run_dir):
         "reward_median": statistics.median(reward_values),
         "guard_total": sum(guard_counts.values()),
         "guard_rate": _percent(sum(guard_counts.values()), total),
+        "guard_per_task": round(sum(guard_counts.values()) / total, 4) if total else 0.0,
         "status_counts": dict(status_counts),
         "reward_counts": dict(reward_counts),
         "guard_counts": dict(guard_counts),
@@ -257,7 +261,7 @@ HTML = r'''<!doctype html>
 
   <section class="card" style="margin-top:16px">
     <h2>任务明细</h2>
-    <div class="controls"><input id="query-filter" placeholder="搜索 task_id 或用户需求"><select id="outcome-filter"><option value="all">全部结果</option><option value="gold_purchase">严格成功购买</option><option value="partial_alternative_purchase">部分满足购买</option><option value="wrong_purchase">错误购买</option><option value="repeat_loop">重复循环</option><option value="max_steps">达到步数上限</option><option value="unknown">未完成 / 无终局</option></select><span class="small" id="row-count"></span></div>
+    <div class="controls"><input id="query-filter" placeholder="搜索 task_id 或用户需求"><select id="outcome-filter"><option value="all">全部结果</option><option value="gold_purchase">严格成功购买</option><option value="partial_alternative_purchase">部分满足购买</option><option value="wrong_purchase">错误购买</option><option value="repeat_loop">重复循环</option><option value="max_steps">达到步数上限</option><option value="early_abstain">过早放弃</option><option value="unknown">未完成 / 无终局</option></select><span class="small" id="row-count"></span></div>
     <div class="table-wrap"><table><thead><tr><th><button data-sort="task_id">Task ID ↕</button></th><th>用户需求</th><th><button data-sort="reward_type">结果 ↕</button></th><th class="num"><button data-sort="steps">步数 ↕</button></th><th class="num"><button data-sort="reward">Reward ↕</button></th><th class="num"><button data-sort="guard_count">Guard ↕</button></th><th>动作序列</th></tr></thead><tbody id="task-table"></tbody></table></div>
   </section>
   <footer id="report-footer"></footer>
@@ -270,9 +274,9 @@ const fmtPct = v => `${(Number(v) * 100).toFixed(1)}%`;
 const fmt = v => Number(v).toFixed(3);
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[char]);
 const show = value => value === '' || value === null || value === undefined ? '—' : value;
-const outcomeLabel = key => ({gold_purchase:'严格成功购买',partial_alternative_purchase:'部分满足购买',wrong_purchase:'错误购买',repeat_loop:'重复循环',max_steps:'达到步数上限',unknown:'未完成 / 无终局'})[key] || key;
-const outcomeClass = key => key === 'gold_purchase' ? 'ok' : ['wrong_purchase','repeat_loop','max_steps'].includes(key) ? 'bad' : key === 'partial_alternative_purchase' ? 'warn' : 'neutral';
-const barClass = key => ({gold_purchase:'green',partial_alternative_purchase:'amber',wrong_purchase:'red',repeat_loop:'red',max_steps:'purple',unknown:'cyan'})[key] || '';
+const outcomeLabel = key => ({gold_purchase:'严格成功购买',partial_alternative_purchase:'部分满足购买',wrong_purchase:'错误购买',repeat_loop:'重复循环',max_steps:'达到步数上限',early_abstain:'过早放弃',unknown:'未完成 / 无终局'})[key] || key;
+const outcomeClass = key => key === 'gold_purchase' ? 'ok' : ['wrong_purchase','repeat_loop','max_steps','early_abstain'].includes(key) ? 'bad' : key === 'partial_alternative_purchase' ? 'warn' : 'neutral';
+const barClass = key => ({gold_purchase:'green',partial_alternative_purchase:'amber',wrong_purchase:'red',repeat_loop:'red',max_steps:'purple',early_abstain:'red',unknown:'cyan'})[key] || '';
 function setText(id, value) { document.getElementById(id).textContent = value; }
 setText('report-tag', `Shopping GRPO · ${M.reward_contract || '评测报告'}`);
 setText('report-title', `${M.model} 评测报告`);
@@ -285,7 +289,7 @@ setText('kpi-purchase', `${S.purchase}/${S.total} · ${fmtPct(S.purchase_rate)}`
 setText('kpi-done', `${S.done}/${S.total} · ${fmtPct(S.done_rate)}`);
 setText('kpi-reward', fmt(S.mean_reward));
 setText('kpi-steps', `${S.average_steps.toFixed(2)}（中位数 ${S.median_steps}）`);
-setText('kpi-guard', `${S.guard_total}（${S.guard_rate.toFixed(2)}/题）`);
+setText('kpi-guard', `${S.guard_total}（${S.guard_per_task.toFixed(2)}/题）`);
 
 function renderBars(targetId, items, maxValue, valueText, classFn) {
   const target = document.getElementById(targetId);

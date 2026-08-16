@@ -4,6 +4,55 @@
 证据、对历史结果的影响，以及是否重新运行了 rollout。完整原始轨迹是本地
 `outputs/evaluation/` 产物，不提交到 Git；这里保存可复核的汇总和 bad-case 结论。
 
+## 2026-08-16 — Qwen3.8-27B Final-200 Clean 贡献者评测
+
+本次新增的是模型评测结果，不改变 Final-200 Clean 任务、Environment 或 Reward 契约。
+
+### 冻结协议
+
+- 模型：`Qwen3.8-27B`，BF16 权重，4 卡 tensor parallel，FP8 KV cache；
+- 推理：通过 `chat_template_kwargs.enable_thinking=false` 关闭思考；
+- 提示词：作者原始 system prompt，不追加示例；
+- 采样：`temperature=0`、`top_p=1`、每题 1 条 rollout；
+- 限制：最多 35 步，每回合最多 512 tokens，上下文 24576 tokens，不压缩历史；
+- Runtime：Environment v2.1 / Reward v3 / observation v2 / tools v2；
+- Observation budgets：1536 / 4096 / 768 tokens，搜索结果 top-k 20。
+
+### 结果
+
+| 指标 | 结果 |
+|---|---:|
+| 严格成功 / `gold_purchase` | 146/200（73.0%） |
+| 购买成功 | 146/200（73.0%） |
+| 完成终局 | 199/200（99.5%） |
+| 平均最终 Reward | 0.6354 |
+| 平均加权得分 | 0.7797 |
+| 平均 / 中位步数 | 6.15 / 4 |
+| Guard 拒绝 | 28（0.14/题） |
+| 端到端评测耗时 | 19 分 59 秒 |
+
+终局分布为：146 题严格成功、26 题部分满足购买、20 题重复循环、4 题过早放弃、
+2 题达到步数上限、1 题错误购买、1 题无终局。唯一无终局题为冻结 24576-token
+窗口下的 `ContextBudgetError`，仍保留在 200 题分母中。
+
+步数区间的严格成功分别为：1–5 步 `111/142`、6–10 步 `28/44`、11–20 步
+`7/8`、21–35 步 `0/6`。
+
+![Qwen3.8-27B Final-200 Clean 评测报告](images/qwen3.8-27b-final200-clean-report.jpg)
+
+### 可复核性
+
+- Final-200 Clean SHA-256：
+  `d99112a20ef47534c27a32e4b38229bf048dcc6b06fef2e3e919aac3093662f5`；
+- 200 条原始轨迹 SHA-256：
+  `b6edf31214aa162599ac8c676ef80e869f496957dbf9627837bdaf93da59e9b5`；
+- `summary.json` SHA-256：
+  `d46e1745cc463a7a50d5669b1fd401dbbeeaebab366e958bfdacc96703b85333`。
+
+原始轨迹继续按仓库约定保存在本地 `outputs/evaluation/`，不提交到 Git。本次同时修复
+通用 HTML 报告中遗漏 `early_abstain` 以及把 Guard 百分比误标成“每题次数”的问题，并
+增加回归测试。
+
 ## 2026-08-13 — Final-200 Clean 补齐并取代 Final-183
 
 ### 数据集变更
