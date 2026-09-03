@@ -329,6 +329,8 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
                     state["action_attempt_after_truncation_count"]
                 ),
             }
+            if session.trace_target is not None:
+                output.extra_fields["trace_target"] = session.trace_target
             return output
         finally:
             await session.close()

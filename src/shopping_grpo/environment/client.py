@@ -36,6 +36,7 @@ class ShopAgentEnv:
         self.transport = transport
         self.env_idx = None
         self.done = False
+        self.include_trace_target = False
 
     def __enter__(self):
         return self
@@ -54,7 +55,10 @@ class ShopAgentEnv:
             raise ShopEnvironmentStateError("Environment is already leased; release it before reset")
 
         # reset 只负责建立租约；真正的购物动作统一走 step，便于上层记录轨迹。
-        result = self._call({"action": "reset", "idx": int(task_id)})
+        payload = {"action": "reset", "idx": int(task_id)}
+        if self.include_trace_target:
+            payload["include_trace_target"] = True
+        result = self._call(payload)
         env_idx = result.get("env_idx")
         if not isinstance(env_idx, int):
             raise ShopProtocolError("reset response is missing integer env_idx")

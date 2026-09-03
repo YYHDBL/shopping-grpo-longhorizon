@@ -19,7 +19,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _handle_reset_action(env: Any, env_idx: int, task_idx: Optional[int]) -> Dict[str, Any]:
+def _handle_reset_action(
+    env: Any,
+    env_idx: int,
+    task_idx: Optional[int],
+    include_trace_target: bool = False,
+) -> Dict[str, Any]:
     """
     Handle reset action
 
@@ -48,6 +53,12 @@ def _handle_reset_action(env: Any, env_idx: int, task_idx: Optional[int]) -> Dic
         ),
         "observation_state": env.structured_observation(),
     }
+    if include_trace_target:
+        goal = env.server.goals[task_idx]
+        return_info["_trace_target"] = {
+            "asin": goal["asin"],
+            "options": goal["goal_options"],
+        }
     if hasattr(env, 'user_persona') and env.user_persona is not None:
         return_info['user_persona'] = env.user_persona
         return_info['reason_key'] = env.reason_key
@@ -167,6 +178,7 @@ def shop_agent(
     action: str,
     idx: Optional[int] = None,
     response: Optional[str] = None,
+    include_trace_target: bool = False,
 ) -> Dict[str, Any]:
     """
     Main shop agent function that handles environment reset and interaction actions
@@ -187,7 +199,12 @@ def shop_agent(
     if action == "reset":
         if idx is None:
             raise ValueError("reset action requires idx parameter")
-        return _handle_reset_action(env, env_idx, idx)
+        return _handle_reset_action(
+            env,
+            env_idx,
+            idx,
+            include_trace_target=include_trace_target,
+        )
 
     elif action == "interact":
         if response is None:

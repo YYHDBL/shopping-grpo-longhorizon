@@ -245,6 +245,40 @@ def validate_dynamic_sampling(config, verl_source: Path, installed):
     )
 
 
+def validate_trace(config):
+    """Fail before model loading when the optional TRACE arm is inconsistent."""
+    trace = config.get("shopping_trace", {})
+    if not bool(trace.get("enable", False)):
+        return
+    if str(config["algorithm"]["adv_estimator"]).lower() != "grpo":
+        raise SystemExit("shopping TRACE only supports GRPO")
+    model = config["actor_rollout_ref"]["model"]
+    lora_rank = int(model.get("lora", {}).get("rank", 0) or model.get("lora_rank", 0))
+    if lora_rank <= 0:
+        raise SystemExit("shopping TRACE requires LoRA to expose a frozen base reference")
+    if int(config["trainer"]["n_gpus_per_node"]) != 1 or int(config["trainer"]["nnodes"]) != 1:
+        raise SystemExit("shopping TRACE currently supports the repository's single-GPU recipe")
+    values = {
+        "epsilon": float(trace.get("epsilon", 0)),
+        "discount": float(trace.get("discount", -1)),
+        "terminal_weight": float(trace.get("terminal_weight", -1)),
+        "outcome_weight": float(trace.get("outcome_weight", -1)),
+        "turn_weight": float(trace.get("turn_weight", -1)),
+    }
+    if not all(math.isfinite(value) for value in values.values()):
+        raise SystemExit("shopping TRACE hyperparameters must be finite")
+    if values["epsilon"] <= 0 or int(trace.get("horizon", 0)) <= 0:
+        raise SystemExit("shopping TRACE epsilon and horizon must be positive")
+    if not 0 <= values["discount"] <= 1:
+        raise SystemExit("shopping TRACE discount must be in [0, 1]")
+    if min(values["terminal_weight"], values["outcome_weight"], values["turn_weight"]) < 0:
+        raise SystemExit("shopping TRACE weights must be non-negative")
+    if int(trace.get("max_sequence_length", 0)) != MAX_SAFE_SEQUENCE_LENGTH:
+        raise SystemExit(
+            f"shopping TRACE max_sequence_length must equal {MAX_SAFE_SEQUENCE_LENGTH}"
+        )
+
+
 def validate_swanlab_tracking(config):
     """Validate SwanLab only when the user explicitly enables it."""
     logger_backends = list(config.trainer.get("logger", []))
@@ -388,6 +422,7 @@ def main():
     if missing:
         raise SystemExit("missing GRPO parquet file(s): " + ", ".join(missing))
     validate_training_memory_budget(config)
+    validate_trace(config)
 
     if sys.version_info[:2] != (3, 12):
         raise SystemExit(f"incompatible Python: expected 3.12, got {sys.version.split()[0]}")

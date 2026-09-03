@@ -11,6 +11,7 @@ import asyncio
 from shopping_grpo.environment.client import ShopAgentEnv
 from shopping_grpo.environment.observation import render_structured_observation
 from shopping_grpo.training.grpo.adapter.runtime import current_environment, current_runtime_state, make_runtime_state
+from shopping_grpo.training.grpo.trace import canonical_purchase_target
 
 
 class ShopSimulatorSession:
@@ -31,6 +32,7 @@ class ShopSimulatorSession:
         self.env_factory = env_factory or ShopAgentEnv
         self.env = None
         self.state = None
+        self.trace_target = None
         self._environment_token = None
         self._state_token = None
 
@@ -39,6 +41,7 @@ class ShopSimulatorSession:
         if self.env is not None:
             raise RuntimeError("ShopSimulator session has already started")
         self.env = self.env_factory(base_url=self.base_url, timeout=self.timeout)
+        self.env.include_trace_target = True
         try:
             # ShopAgentEnv 使用阻塞 urllib；放到线程中不会阻塞 veRL 的事件循环。
             initial = await asyncio.to_thread(self.env.reset, int(task_id))
@@ -50,6 +53,20 @@ class ShopSimulatorSession:
             raise
 
         self.state = make_runtime_state(task_id=task_id, max_steps=self.max_steps)
+        if isinstance(initial, dict) and initial.get("_trace_target") is not None:
+            private_target = initial["_trace_target"]
+            try:
+                if not isinstance(private_target, dict):
+                    raise ValueError("ShopSimulator _trace_target must be an object")
+                self.trace_target = canonical_purchase_target(
+                    private_target.get("asin"), private_target.get("options")
+                )
+            except ValueError:
+                try:
+                    await asyncio.to_thread(self.env.release)
+                finally:
+                    self.env = None
+                raise
         actual_version = (
             initial.get("environment_version") if isinstance(initial, dict) else None
         )

@@ -97,6 +97,20 @@ class ShopAgentEnvTest(unittest.TestCase):
         with self.assertRaises(shop_http_env.ShopEnvironmentStateError):
             env.step("search[乳胶枕]")
 
+    def test_trace_target_requires_explicit_training_opt_in(self):
+        transport = FakeTransport(
+            [{"result": {"instruction": "找商品", "env_idx": 2, "idx": 0}}]
+        )
+        env = shop_http_env.ShopAgentEnv(transport=transport)
+        env.include_trace_target = True
+
+        env.reset(0)
+
+        self.assertEqual(
+            transport.calls[0][1],
+            {"action": "reset", "idx": 0, "include_trace_target": True},
+        )
+
     def test_environment_error_is_distinct_from_http_error(self):
         env = shop_http_env.ShopAgentEnv(
             transport=FakeTransport([{"result": {"error": "reset action requires idx parameter"}}])

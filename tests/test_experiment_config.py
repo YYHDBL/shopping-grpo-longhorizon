@@ -70,6 +70,18 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertIn("actor_rollout_ref.actor.clip_ratio_high=0.28", command)
         self.assertEqual(environment["SHOPPING_LENGTH_SHAPING_ENABLE"], "false")
 
+    def test_trace_arm_only_enables_trace_override(self):
+        registry = load_registry(ROOT / "configs/experiments.json")
+        baseline, _, _ = build_experiment(
+            resolve_experiment(registry, "grpo_baseline"), root=ROOT
+        )
+        treatment, _, _ = build_experiment(
+            resolve_experiment(registry, "grpo_trace"), root=ROOT
+        )
+
+        self.assertIn("shopping_trace.enable=false", baseline)
+        self.assertIn("shopping_trace.enable=true", treatment)
+
     def test_external_json_can_add_an_experiment_without_code_changes(self):
         source = json.loads((ROOT / "configs/experiments.json").read_text(encoding="utf-8"))
         source["experiments"]["sft_epoch_4"] = {

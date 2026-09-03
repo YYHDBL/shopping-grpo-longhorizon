@@ -194,6 +194,7 @@ def build_experiment(
         f"actor_rollout_ref.actor.clip_ratio_high={high}",
         f"actor_rollout_ref.actor.use_kl_loss={str(bool(settings['kl_enabled'])).lower()}",
         f"actor_rollout_ref.actor.kl_loss_coef={settings['kl_coefficient']}",
+        f"shopping_trace.enable={str(bool(settings['trace_enabled'])).lower()}",
     ]
     return command, environment, output
 
