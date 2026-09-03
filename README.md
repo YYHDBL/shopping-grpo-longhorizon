@@ -391,6 +391,15 @@ bash scripts/grpo.sh --logger swanlab
 - [Reward v3 设计](docs/reward-v3.md)
 - [可审计实验结果](experiments/comparison.md)
 
+## 后续改进计划
+
+为进一步提升模型在长程购物任务中的规划、工具调用与约束满足能力，后续将从以下几个方面推进项目：
+
+- **扩大模型规模**：在现有实验基础上，训练更大规模的 `Qwen3.5-9B` 模型，评估模型规模对长程任务稳定性和最终成功率的影响。
+- **升级 Teacher 模型与轨迹采集方案**：不再依赖单一 Teacher 模型，计划采用 `Qwen3.8 Flash`、`GLM-5.3-Flash` 和 `DeepSeek-V4-Flash-0731` 的混合方案进行轨迹收集，以提升训练数据的覆盖范围、行为多样性与质量上限。
+- **扩大独立验证集**：增加验证任务数量和任务类型，覆盖更多商品类别、约束组合与交互路径，从而提高实验结论的统计可靠性和泛化评估能力。
+- **引入更细粒度的信用分配**：针对长程交互中终局奖励稀疏、动作贡献难以区分的问题，采用更细粒度的信用分配方法，为关键中间步骤提供更有效的训练信号。
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=YYHDBL%2Fshopping-grpo-longhorizon&type=date&legend=top-left">

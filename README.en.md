@@ -379,6 +379,15 @@ bash scripts/grpo.sh --logger swanlab
 - [Reward v3 design](docs/reward-v3.md)
 - [Auditable experiment results](experiments/comparison.md)
 
+## Future improvement plan
+
+To further improve planning, tool use, and constraint satisfaction on long-horizon shopping tasks, the project will pursue the following directions:
+
+- **Scale up the model**: Train a larger `Qwen3.5-9B` model on top of the current experiments and evaluate how model scale affects long-horizon stability and end-task success rate.
+- **Upgrade the Teacher models and trajectory collection**: Move beyond a single Teacher model by using a mixture of `Qwen3.8 Flash`, `GLM-5.3-Flash`, and `DeepSeek-V4-Flash-0731` to collect trajectories, improving the coverage, behavioral diversity, and quality ceiling of the training data.
+- **Expand the independent validation set**: Increase the number and variety of validation tasks to cover more product categories, constraint combinations, and interaction paths, strengthening the statistical reliability and generalization assessment of the results.
+- **Introduce finer-grained credit assignment**: Address sparse terminal rewards and the difficulty of distinguishing individual action contributions in long-horizon interactions by providing more effective training signals for important intermediate steps.
+
 ## References and acknowledgements
 
 This tutorial builds on the
