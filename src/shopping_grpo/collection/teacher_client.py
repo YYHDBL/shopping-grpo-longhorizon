@@ -120,9 +120,10 @@ class AnthropicTeacherClient:
             "temperature": self.temperature,
             "top_p": self.top_p,
             "messages": converted,
-            "tools": anthropic_tools,
-            "tool_choice": {"type": "any"},
         }
+        if anthropic_tools:
+            payload["tools"] = anthropic_tools
+            payload["tool_choice"] = {"type": "any"}
         if system:
             payload["system"] = system
         headers = {

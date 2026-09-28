@@ -37,6 +37,13 @@ class ActionValidationTest(unittest.TestCase):
 
         self.assertEqual(reason, "schema_extra_arguments:string")
 
+    def test_rejects_missing_required_argument_before_executing_tool(self):
+        observation = "搜索功能是否可用: True"
+
+        reason = action_reject_reason("search_products", {}, observation)
+
+        self.assertEqual(reason, "schema_missing_arguments:query")
+
     def test_structured_observation_accepts_real_eleven_digit_product_id(self):
         asin = "35842622441"
         observation = (

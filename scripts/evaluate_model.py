@@ -39,11 +39,9 @@ ENV_PRODUCT_DATA = (
 )
 
 
-def build_env_tasks(split, limit):
+def build_env_tasks(split, limit, task_ids=None):
     tasks = [json.loads(l) for l in DEFAULT_TASKS.open(encoding="utf-8")]
     selected = [t for t in tasks if t.get("split") == split]
-    if limit:
-        selected = selected[: int(limit)]
     persona_pool = {
         json.loads(l)["persona_id"]: json.loads(l)
         for l in (ROOT / "outputs/persona/persona_pool.jsonl").open(encoding="utf-8")
@@ -52,6 +50,9 @@ def build_env_tasks(split, limit):
         index_of = {str(row["asin"]): i for i, row in enumerate(json.load(f))}
     env_tasks = []
     for task in sorted(selected, key=lambda t: t["record_id"]):
+        task_id = index_of[task["record_id"]]
+        if task_ids is not None and task_id not in task_ids:
+            continue
         system = STUDENT_SYSTEM_PROMPT
         if task.get("persona_ref"):
             entry = persona_pool.get(task["persona_ref"])
@@ -60,14 +61,14 @@ def build_env_tasks(split, limit):
                            "与当前请求冲突时以请求为准：\n\n"
                            + render_persona(entry["persona"]))
         env_tasks.append({
-            "task_id": index_of[task["record_id"]],
+            "task_id": task_id,
             "record_id": task["record_id"],
             "difficulty": task["difficulty"],
             "persona_condition": task["persona_condition"],
             "domain": task["domain"],
             "prompt": [{"role": "system", "content": system}],
         })
-    return env_tasks
+    return env_tasks[: int(limit)] if limit else env_tasks
 
 
 def summarize(trajectories_path, tasks):
@@ -159,6 +160,11 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument(
+        "--task-ids",
+        type=lambda value: {int(item) for item in value.split(",") if item.strip()},
+        help="只评测逗号分隔的环境 task_id",
+    )
     args = parser.parse_args()
 
     out_dir = ROOT / "outputs/evaluation" / args.name
@@ -180,14 +186,14 @@ def main():
             thinking=False,
             context_window=24576,
             context_safety_margin=512,
-            context_compaction_enable=False,
+            context_compaction_enable=True,
             observation_token_budget=1536,
             observation_detail_token_budget=4096,
             observation_generic_token_budget=768,
             observation_search_top_k=20,
         )
 
-    env_tasks = build_env_tasks(args.split, args.limit)
+    env_tasks = build_env_tasks(args.split, args.limit, args.task_ids)
     print(f"评测 {args.name}：{len(env_tasks)} 题，模型 {args.base_url} 的 "
           f"{args.model}，环境 {args.env_url}", flush=True)
     collect_tasks_parallel(

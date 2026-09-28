@@ -95,3 +95,17 @@ The implementation is
 [`reward.py`](../environments/ShopSimulator/shop_env/web_agent_site/engine/reward.py),
 with termination logic in
 [`termination.py`](../environments/ShopSimulator/shop_env/web_agent_site/engine/termination.py).
+
+## Variant price caveat
+
+Multiple effective option axes do not prove that every combination is
+purchasable. A listing may bind options into complete variants, such as
+`white + small` and `black + large`, while exposing color and size as separate
+fields. When `variant_combinations` or equivalent SKU linkage is missing, the
+resolver cannot safely infer the price of an arbitrary cross-combination and
+returns `reward_unverifiable`.
+
+Such a result records missing price evidence, not proof that every model must
+fail the task. Do not remove an evaluation task solely from a model trajectory
+with this result. Reassess the product using complete SKU option, linkage and
+price evidence first.

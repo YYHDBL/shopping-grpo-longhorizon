@@ -26,6 +26,10 @@ TOOL_ARGUMENT_NAMES = {
     tool["function"]["name"]: set(tool["function"]["parameters"].get("properties", {}))
     for tool in SHOP_TOOL_SCHEMAS
 }
+TOOL_REQUIRED_ARGUMENT_NAMES = {
+    tool["function"]["name"]: set(tool["function"]["parameters"].get("required", []))
+    for tool in SHOP_TOOL_SCHEMAS
+}
 SUBPAGE_TOOLS = {
     "view_description": "Description",
     "view_features": "Features",
@@ -60,6 +64,9 @@ def action_reject_reason(name, arguments, observation, visited_subpages=None):
     extra_argument_names = _schema_extra_argument_names(name, arguments)
     if extra_argument_names:
         return "schema_extra_arguments:" + ",".join(extra_argument_names)
+    missing_argument_names = _schema_missing_argument_names(name, arguments)
+    if missing_argument_names:
+        return "schema_missing_arguments:" + ",".join(missing_argument_names)
     if name == "finish_without_purchase":
         if arguments.get("reason") != "no_suitable_product":
             return "invalid_finish_reason"
@@ -100,6 +107,13 @@ def _schema_extra_argument_names(name, arguments):
     if allowed_names is None or not isinstance(arguments, dict):
         return []
     return sorted(set(arguments) - allowed_names)
+
+
+def _schema_missing_argument_names(name, arguments):
+    required_names = TOOL_REQUIRED_ARGUMENT_NAMES.get(name)
+    if required_names is None or not isinstance(arguments, dict):
+        return []
+    return sorted(required_names - set(arguments))
 
 
 def action_guard_tool_message(tool_call, reason, observation):

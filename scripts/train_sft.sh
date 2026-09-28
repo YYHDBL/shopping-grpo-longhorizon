@@ -2,9 +2,10 @@
 # V2.0 SFT 训练入口（veRL 0.9.1 fsdp_sft + ShoppingMultiTurnSFTDataset）
 # 双卡 A800、BF16 全参微调。所有会影响结果的配置显式写出，不依赖 veRL 默认值。
 #
-# 批量结构：train_batch_size=32（全局），micro_batch_size_per_gpu=2，双卡
-#           => 梯度累积 8 步/micro-batch 由 veRL 按 (32 / (2*2)) 推导。
-# 检查点选择：save_freq 每 200 步存一档，max_ckpt_to_keep=3；
+# 批量结构：train_batch_size=64（全局）/双卡=32 条/卡，动态 bsz 按 16384 token/卡切块，
+#           每卡约 8~11 块做梯度累积后更新一次；micro_batch_size_per_gpu=4 为单块条数硬上限；
+#           offload 全关（显存吃满），PYTORCH_CUDA_ALLOC_CONF=expandable_segments 防碎片（launch 脚本注入）。
+# 检查点：save_freq=50 与验证同步（50/100/150/最终共 4 档，每档约 90GB），max_ckpt_to_keep=3 滚动保留+final；
 #           dev 集评测与最终 checkpoint 选择由独立的评测脚本执行（基于
 #           outputs/split/tasks_final.jsonl 中 split=dev 的 1,050 条任务，
 #           经冻结评测管线打分）。训练同步记录优化、Agentic token、序列长度、
@@ -17,7 +18,7 @@ cd "$ROOT"
 export PYTHONPATH="$ROOT/src:$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export SWANLAB_LOG_DIR="${SWANLAB_LOG_DIR:-$ROOT/outputs/swanlog}"
 
-torchrun --standalone --nnodes=1 --nproc-per-node=2 \
+torchrun --standalone --nnodes=1 --nproc-per-node=4 \
   -m shopping_grpo.training.sft.trainer \
   data.train_files="$ROOT/outputs/sft_dataset/train.parquet" \
   data.val_files="$ROOT/outputs/sft_dataset/val.parquet" \
@@ -31,15 +32,15 @@ torchrun --standalone --nnodes=1 --nproc-per-node=2 \
   data.pad_mode=no_padding \
   data.use_dynamic_bsz=true \
   data.max_token_len_per_gpu=16384 \
-  data.micro_batch_size_per_gpu=2 \
-  data.train_batch_size=32 \
-  data.num_workers=4 \
+  data.micro_batch_size_per_gpu=4 \
+  data.train_batch_size=64 \
+  data.num_workers=0 \
   model.path="$ROOT/models/Qwen3.5-9B" \
   model.trust_remote_code=true \
   +model.override_config.attn_implementation=sdpa \
   engine.model_dtype=bfloat16 \
-  engine.param_offload=true \
-  engine.optimizer_offload=true \
+  engine.param_offload=false \
+  engine.optimizer_offload=false \
   optim.optimizer=AdamW \
   optim.optimizer_impl=torch.optim \
   optim.lr=1e-5 \
@@ -51,8 +52,8 @@ torchrun --standalone --nnodes=1 --nproc-per-node=2 \
   trainer.total_epochs=2 \
   trainer.logger="['console','swanlab']" \
   trainer.nnodes=1 \
-  trainer.n_gpus_per_node=2 \
-  trainer.save_freq=200 \
+  trainer.n_gpus_per_node=4 \
+  trainer.save_freq=50 \
   trainer.max_ckpt_to_keep=3 \
   trainer.test_freq=50 \
   trainer.resume_mode=auto \
