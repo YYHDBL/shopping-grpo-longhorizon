@@ -21,8 +21,6 @@ CLICK_TOOL_ACTIONS = {
 def tool_call_to_action(name, parameters):
     """把一个标准 tool call 转成 ShopSimulator 能执行的字符串动作。"""
     parameters = parameters or {}
-    if name == "think":
-        return None
     if name == "search_products":
         return f"search[{parameters['query']}]"
     if name == "finish_without_purchase":
@@ -33,18 +31,24 @@ def tool_call_to_action(name, parameters):
 
 
 def _schema(name, description, properties=None, required=None):
-    """生成统一格式的 OpenAI function schema，并禁止额外参数。"""
+    """生成统一格式的 OpenAI function schema，并禁止额外参数。
+
+    无参数时省略 properties 键（additionalProperties=False 已表达无参数；
+    空对象与 null 都无法写入 parquet 的 struct 列）。
+    """
+    parameters = {
+        "type": "object",
+        "required": required or [],
+        "additionalProperties": False,
+    }
+    if properties:
+        parameters["properties"] = properties
     return {
         "type": "function",
         "function": {
             "name": name,
             "description": description,
-            "parameters": {
-                "type": "object",
-                "properties": properties or {},
-                "required": required or [],
-                "additionalProperties": False,
-            },
+            "parameters": parameters,
         },
     }
 
@@ -79,12 +83,6 @@ _INTERACTION_TOOL_SCHEMAS = [
         "buy_now",
         "不可撤销的终止动作。仅当最新 observation 显示 Buy Now、品类正确、完整 variant 的实际价格在预算内，且按品牌、型号与核心功能、规格属性比较后是已核验候选中的最佳选择时购买；无参数，必须传 {}。",
     ),
-    _schema(
-        "think",
-        "不要调用 think 工具；它不与商店交互且会浪费有限步骤。请直接选择一个能带来新证据的购物工具。",
-        {"note": {"type": "string"}},
-        ["note"],
-    ),
 ]
 
 _FINISH_WITHOUT_PURCHASE_SCHEMA = _schema(
@@ -99,7 +97,6 @@ _FINISH_WITHOUT_PURCHASE_SCHEMA = _schema(
     ["reason"],
 )
 SHOP_TOOL_SCHEMAS = [
-    *_INTERACTION_TOOL_SCHEMAS[:-1],
+    *_INTERACTION_TOOL_SCHEMAS,
     _FINISH_WITHOUT_PURCHASE_SCHEMA,
-    _INTERACTION_TOOL_SCHEMAS[-1],
 ]

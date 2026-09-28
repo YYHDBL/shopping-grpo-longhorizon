@@ -86,7 +86,7 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
                             "reward": 0.0,
                         }
                     ],
-                    "guard_rejection_reason_counts": {"asin_not_visible": 2},
+                    "guard_rejection_reason_counts": {"click_not_in_previous_observation": 2},
                 }
             )
             return AgentLoopOutput(
@@ -136,7 +136,7 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
         )
         self.assertEqual(
             output.extra_fields["shopping"]["guard_rejection_reasons"],
-            {"asin_not_visible": 2},
+            {"click_not_in_previous_observation": 2},
         )
         self.assertTrue(created[0].released)
 
@@ -171,7 +171,7 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
     def test_runtime_state_has_no_hidden_goal_fields(self):
         state = make_runtime_state(task_id=2, max_steps=35)
         self.assertNotIn("goal", state)
-        self.assertNotIn("reward_detail", state)
+        
 
     def test_task_id_is_read_from_verl_extra_info(self):
         self.assertEqual(task_id_from_kwargs({"extra_info": {"task_id": 42}}), 42)
@@ -216,7 +216,7 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
             self.assertTrue(state["terminate"])
             self.assertEqual(state["terminal_result"], {"done": True, "over": True})
             self.assertTrue(state["infrastructure_invalid"])
-            self.assertIsNone(state["reward_components"])
+            self.assertIsNone(state["reward_detail"])
             self.assertNotIn("hidden", str(state))
 
         asyncio.run(run())
@@ -231,10 +231,14 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
                     "reward": 0.6,
                     "goal": {"secret": True},
                     "reward_detail": {
-                        "r_type": 1,
-                        "r_att": 1,
-                        "r_option": 0.5,
-                        "r_price": 1,
+                        "reward_version": "shopsimulator-reward-v3",
+                        "reward_type": "partial_alternative_purchase",
+                        "termination_reason": "partial_alternative_purchase",
+                        "reward_valid": True,
+                        "terminal_utility": 0.6,
+                        "purchase_success": True,
+                        "sampling_invalid": False,
+                        "hard_gates": {},
                         "hidden_answer": "do not retain",
                     },
                 }
@@ -255,9 +259,8 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
             self.assertEqual(response.text, "Environment terminated.")
             self.assertFalse(state["infrastructure_invalid"])
             self.assertEqual(
-                state["reward_components"],
-                {"r_type": 1.0, "r_att": 1.0, "r_option": 0.5, "r_price": 1.0},
-            )
+                state["reward_type"], "partial_alternative_purchase")
+            self.assertTrue(state["reward_valid"])
             self.assertNotIn("hidden", str(state))
 
         asyncio.run(run())
@@ -396,23 +399,6 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
 
         asyncio.run(run())
 
-    def test_think_consumes_the_step_budget_and_terminates_at_the_exact_limit(self):
-        async def run():
-            state = make_runtime_state(task_id=2, max_steps=1)
-            env_token = current_environment.set(object())
-            state_token = current_runtime_state.set(state)
-            try:
-                response, _, _ = await make_tool("think").execute("tool-1", {"note": "plan"})
-            finally:
-                current_runtime_state.reset(state_token)
-                current_environment.reset(env_token)
-            self.assertEqual(len(state["steps"]), 1)
-            self.assertTrue(state["terminate"])
-            self.assertEqual(state["error"], "max_steps")
-            self.assertIn("maximum", response.text)
-
-        asyncio.run(run())
-
     def test_repeated_guard_rejections_terminate_instead_of_looping_forever(self):
         async def run():
             state = make_runtime_state(task_id=2, max_steps=35)
@@ -437,7 +423,7 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
             self.assertEqual(state["action_attempt_after_truncation_count"], 3)
             self.assertEqual(
                 state["guard_rejection_reason_counts"],
-                {"asin_not_visible": 3},
+                {"click_not_in_previous_observation": 3},
             )
             self.assertIn("maximum", response.text)
 

@@ -235,13 +235,18 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
         return response, reward, step
 
     async def _handle_processing_tools_state(self, agent_data):
-        """强制每个 assistant 回合最多执行一个工具调用。"""
+        """每个 assistant 回合只执行第一个工具调用，多余的丢弃并计数。
+
+        与采集侧 rollout 的 _enforce_serial_tool_call 行为保持一致：并行工具
+        调用是可恢复的格式偏差，直接丢弃多余调用，不终止轨迹。
+        """
         runtime_state = current_runtime_state.get()
         if runtime_state is not None and len(agent_data.tool_calls) > 1:
-            runtime_state["terminate"] = True
-            runtime_state["termination_reason"] = "parallel_tool_calls"
-            runtime_state["error"] = "parallel_tool_calls"
-            return AgentState.TERMINATED
+            dropped = len(agent_data.tool_calls) - 1
+            runtime_state["dropped_parallel_tool_calls"] = (
+                runtime_state.get("dropped_parallel_tool_calls", 0) + dropped
+            )
+            agent_data.tool_calls = agent_data.tool_calls[:1]
         next_state = await super()._handle_processing_tools_state(agent_data)
         runtime_state = current_runtime_state.get()
         if runtime_state is not None and runtime_state.get("terminate"):

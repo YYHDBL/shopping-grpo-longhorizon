@@ -11,24 +11,9 @@ from unittest.mock import patch
 
 from scripts.train_grpo import build_command, parse_args
 from shopping_grpo.cli import main as cli_main
-from shopping_grpo.smoke import run_cpu_smoke
 
 
 class PublicEntrypointTest(unittest.TestCase):
-    def test_cpu_smoke_covers_public_contracts(self):
-        result = run_cpu_smoke()
-
-        self.assertEqual(
-            result["checks"],
-            [
-                "action_schema",
-                "trajectory_normalization",
-                "reward_sample",
-                "sft_label_mask",
-                "dynamic_sampling_grouping",
-            ],
-        )
-
     def test_offline_example_cli_runs_without_models_or_environment(self):
         root = Path(__file__).resolve().parents[1]
         with patch.object(

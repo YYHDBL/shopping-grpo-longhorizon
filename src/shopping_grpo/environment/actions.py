@@ -26,9 +26,32 @@ TOOL_ARGUMENT_NAMES = {
     tool["function"]["name"]: set(tool["function"]["parameters"].get("properties", {}))
     for tool in SHOP_TOOL_SCHEMAS
 }
+SUBPAGE_TOOLS = {
+    "view_description": "Description",
+    "view_features": "Features",
+    "view_reviews": "Reviews",
+    "view_attributes": "Attributes",
+}
 
 
-def action_reject_reason(name, arguments, observation):
+def current_page_asin(observation):
+    """从详情页/子页 observation 提取当前商品的 ASIN。"""
+    match = re.search(r"(?m)^asin:\s*(\S+)", observation)
+    return match.group(1) if match else None
+
+
+def subpage_visit_key(name, observation):
+    """返回子页访问的去重键 (asin, subpage)；非子页工具返回 None。"""
+    subpage = SUBPAGE_TOOLS.get(name)
+    if subpage is None:
+        return None
+    asin = current_page_asin(observation)
+    if not asin:
+        return None
+    return (asin, subpage)
+
+
+def action_reject_reason(name, arguments, observation, visited_subpages=None):
     """返回动作拒绝原因；``None`` 表示允许执行。
 
 检查顺序很重要：先拦截 schema 外字段，再处理无需页面状态的动作，最后只允许
@@ -37,8 +60,6 @@ def action_reject_reason(name, arguments, observation):
     extra_argument_names = _schema_extra_argument_names(name, arguments)
     if extra_argument_names:
         return "schema_extra_arguments:" + ",".join(extra_argument_names)
-    if name == "think":
-        return None
     if name == "finish_without_purchase":
         if arguments.get("reason") != "no_suitable_product":
             return "invalid_finish_reason"
@@ -54,6 +75,10 @@ def action_reject_reason(name, arguments, observation):
         if asin not in product_ids(observation):
             return "click_not_in_previous_observation"
         return None
+    if visited_subpages is not None:
+        key = subpage_visit_key(name, observation)
+        if key is not None and key in visited_subpages:
+            return "subpage_already_visited"
 
     try:
         action = tool_call_to_action(name, arguments)

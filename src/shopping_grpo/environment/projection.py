@@ -11,23 +11,17 @@ from dataclasses import asdict, dataclass
 import json
 import re
 
-from shopping_grpo.environment.actions import clickable_buttons, product_ids
+from shopping_grpo.environment.actions import (
+    NAVIGATION_BUTTONS,
+    clickable_buttons,
+    product_ids,
+)
 from shopping_grpo.environment.product_id import PRODUCT_ID_CAPTURE, is_product_id
 
 
 FOOTER_MARKER = "\n\n搜索功能是否可用:"
 TRUNCATION_MARKER = "[TRUNCATED_BY_SHOPPING_PROJECTOR]"
 PROJECTION_CONTRACT_VERSION = "shopping-observation-v2"
-NAVIGATION_BUTTONS = {
-    "back to search",
-    "next >",
-    "< prev",
-    "description",
-    "features",
-    "reviews",
-    "attributes",
-    "buy now",
-}
 
 
 class ObservationProjectionError(RuntimeError):
@@ -58,9 +52,9 @@ def project_observation(
     observation,
     *,
     count_tokens,
-    token_budget=1536,
-    detail_token_budget=4096,
-    generic_token_budget=768,
+    token_budget=3072,
+    detail_token_budget=6144,
+    generic_token_budget=1024,
     parameters=None,
     search_top_k=20,
 ):
@@ -183,6 +177,7 @@ def _project_search_results(
             observation,
             count_tokens=count_tokens,
             token_budget=token_budget,
+            search_top_k=search_top_k,
         )
     body, footer = _split_footer(observation)
     segments = [segment.strip() for segment in body.split("[SEP]")]
@@ -265,6 +260,7 @@ def _project_structured_search_results(
     *,
     count_tokens,
     token_budget,
+    search_top_k,
 ):
     body, footer = _split_footer(observation)
     lines = body.splitlines()
@@ -279,6 +275,11 @@ def _project_structured_search_results(
     if not product_lines:
         raise ObservationProjectionError(
             "structured search observation has no product rows"
+        )
+    if len(product_lines) > search_top_k:
+        raise ObservationProjectionError(
+            f"raw search page has {len(product_lines)} products, above configured "
+            f"page capacity {search_top_k}"
         )
     raw_buttons = clickable_buttons(observation)
     product_asins = {asin for _, asin, _ in product_lines}

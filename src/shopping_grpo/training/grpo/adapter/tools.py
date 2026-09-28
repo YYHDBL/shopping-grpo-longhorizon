@@ -7,7 +7,7 @@ import math
 from typing import Any
 from uuid import uuid4
 
-from shopping_grpo.environment.actions import action_reject_reason
+from shopping_grpo.environment.actions import action_reject_reason, subpage_visit_key
 from shopping_grpo.environment.tools import tool_call_to_action
 from shopping_grpo.environment.observation import render_structured_observation
 from shopping_grpo.training.grpo.adapter.runtime import (
@@ -57,19 +57,17 @@ class ShopSimulatorTool(BaseTool):
             _terminate(state, "max_steps")
             return ToolResponse(text="Error: maximum executed tool steps reached."), 0.0, {"reason": "max_steps"}
         parameters = parameters if isinstance(parameters, dict) else {}
-        # think 不触碰环境，只记录一次模型决策；其余工具必须经过动作守卫。
-        if self.name == "think":
-            step = _append_step(state, self.name, parameters)
-            if len(state["steps"]) >= state["max_steps"]:
-                _terminate(state, "max_steps")
-                return ToolResponse(text="Error: maximum executed tool steps reached."), 0.0, step
-            return ToolResponse(text="Reasoning recorded. Continue with one environment tool call."), 0.0, step
         observation = state.get("latest_observation", "")
         record_action_attempt(state, self.name, parameters, observation)
         state["action_attempt_after_truncation_count"] += int(
             bool(state.get("latest_observation_truncated"))
         )
-        reason = action_reject_reason(self.name, parameters, observation)
+        reason = action_reject_reason(
+            self.name,
+            parameters,
+            observation,
+            visited_subpages=state.get("visited_subpages"),
+        )
         if reason:
             state["guard_rejection_count"] += 1
             reason_counts = state["guard_rejection_reason_counts"]
@@ -84,6 +82,8 @@ class ShopSimulatorTool(BaseTool):
                     "reason": reason
                 }
             return ToolResponse(text=f"Error: action guard rejected this call ({reason}); read the latest observation."), 0.0, {"reason": reason}
+        # 子页去重键在执行前从当前（详情页）observation 提取。
+        subpage_key = subpage_visit_key(self.name, observation)
         try:
             # 先转换成环境动作，再在线程中调用同步客户端；终局 reward 只信任
             # 环境返回的 Reward v3 结构，避免训练侧自行猜测分数。
@@ -104,6 +104,8 @@ class ShopSimulatorTool(BaseTool):
                 done=bool(result.get("done", False)),
                 reward=float(result.get("reward", 0.0)),
             )
+            if subpage_key is not None:
+                state["visited_subpages"].add(subpage_key)
         except Exception as exc:
             _terminate(
                 state,
@@ -127,7 +129,14 @@ class ShopSimulatorTool(BaseTool):
                 _mark_infrastructure_invalid(state, "invalid_terminal_result")
             else:
                 reward_detail = result.get("reward_detail")
-                if (
+                if result.get("reward_valid") is False:
+                    # 环境明确报告不可验证：按不可验证记账，不算基础设施失败。
+                    state["reward_valid"] = False
+                    state["reward_unverifiable"] = True
+                    state["reward_type"] = str(
+                        result.get("termination_reason") or "reward_unverifiable"
+                    )
+                elif (
                     isinstance(reward_detail, dict)
                     and reward_detail.get("reward_version")
                     == "shopsimulator-reward-v3"

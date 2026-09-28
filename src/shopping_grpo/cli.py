@@ -1,7 +1,7 @@
-"""面向用户的轻量 CLI：运行 CPU 契约检查，或离线汇总已保存的轨迹。
+"""面向用户的轻量 CLI：离线汇总已保存的轨迹。
 
-这里不启动模型、不启动 ShopSimulator；需要 GPU 的训练和在线评测仍由仓库根目录
-的 shell 入口负责。
+这里不启动模型、不启动 ShopSimulator；需要 GPU 的训练和在线评测由仓库根目录
+的 shell 入口（scripts/train_sft.sh 等）负责。
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from pathlib import Path
 from shopping_grpo.evaluation.artifacts import iter_jsonl, write_jsonl_atomic
 from shopping_grpo.evaluation.metrics import compute_deterministic_metrics
 from shopping_grpo.evaluation.trajectory import normalize_trajectory
-from shopping_grpo.smoke import run_cpu_smoke
 
 
 def _offline_evaluate(args: argparse.Namespace) -> None:
@@ -57,31 +56,13 @@ def _offline_evaluate(args: argparse.Namespace) -> None:
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
 
 
-def _smoke(args: argparse.Namespace) -> None:
-    """运行不依赖模型和环境服务的纯 CPU 契约检查。"""
-    result = run_cpu_smoke()
-    if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
-        return
-    for check in result["checks"]:
-        print(f"[ok] {check}")
-    print(f"CPU smoke passed: {len(result['checks'])} checks")
-
-
 def parse_args() -> argparse.Namespace:
     """定义公开子命令并返回解析后的参数。"""
     parser = argparse.ArgumentParser(
         prog="shopping-grpo",
-        description="Shopping GRPO public CPU/offline utilities",
+        description="Shopping GRPO public offline utilities",
     )
     commands = parser.add_subparsers(dest="command", required=True)
-
-    command = commands.add_parser(
-        "smoke",
-        help="run pure-CPU contract checks without models or ShopSimulator",
-    )
-    command.add_argument("--json", action="store_true")
-    command.set_defaults(handler=_smoke)
 
     command = commands.add_parser(
         "evaluate",
