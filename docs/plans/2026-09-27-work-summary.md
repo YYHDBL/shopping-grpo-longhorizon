@@ -68,3 +68,47 @@ tool_choice=required（删纯文本出口）、删 think 工具、子页单次�
 | GRPO / 三档评测 | SFT 后 |
 
 基础设施现状：tmux 会话 `shopsim-env`（环境服务 5700 端口、16 槽）；关键数据：`outputs/acceptance/final_verdicts.jsonl`（数据定案）、`outputs/split/tasks_final.jsonl`（任务定义）、`outputs/collection/`（全部轨迹）、`outputs/sft_dataset/train.parquet`（训练数据）。
+
+---
+
+# 追记：2026-09-28，从训练格式到训练启动
+
+## 五、训练格式审计与修复
+
+外部审计发现七项问题（veRL 数据集实例化失败、arrow schema 的 None 参数污染、序列长度未定、教材准入契约、CUDA 不可用、测试失败、teacher 列空），由修复 Agent 在 worktree `.claude/worktrees/v2-fix` 完成，本会话逐项验证通过：
+
+- **守卫拒绝段不入训练**：5,852 条教材中 941 个被拒 assistant 段（684 条轨迹）train=0，逐消息标记贯通 samples.jsonl → parquet → 数据集 loss mask；6 条 `__dummy__` 参数污染轨迹剔除；
+- **审计字段落盘**：reward_valid/over/termination_reason/jev_verdict/purchase 全进 parquet，431 条替代购买可追溯；
+- **fail fast**：非法 JSON、空参数值、token 统计缺失一律报错，禁止静默转换；
+- 测试 158 过 1 跳；数据集 14 项在真实 tokenizer 下全过。
+
+## 六、环境死锁与容器路线（重要转折）
+
+**死锁链**：Qwen3.5 需要新 vllm（0.25 系）→ 绑定 torch 2.11（仅 cu130 构建）→ 宿主机驱动 535 跑不了 cu130；而能跑的 vllm 0.12.0 不认 Qwen3.5。宿主机无解。
+
+**解法**：服务器上在跑的推理服务全用 docker 容器（镜像 `d5219758abb3` 内带 CUDA 兼容层 cuda-compat，绕开驱动限制）。我们照做：
+
+- 起自己的容器（挂载 /data、GPU 直通），容器内栈：**verl 0.9.1 + vllm 0.25.0（认 Qwen3.5）+ torch 2.11+cu130 + transformers 5.10.4，Python 3.12**；
+- 基线版本锁变更（用户批准）：verl 0.8.0→0.9.1、vllm 0.25.1→0.25.0、transformers <5.11；
+- 装法：pip 装 verl 不带 vllm extra（否则它 pin vllm==0.24.0 替换镜像的 0.25.0）；`--entrypoint sleep` 覆盖镜像入口；unset 代理 + 清华镜像；
+- 宿主机 `.venv`（torch 2.9+cu128 组合）保留做 CPU 数据处理，**不认 Qwen3.5，训练一律走容器**。
+
+## 七、GPU 冒烟（通过）
+
+用户授权临时停其 `gemma-4-31B-ita` 服务腾出 4-7 卡：容器栈 CUDA 真实跑通（4×A800 矩阵乘）、Qwen3.5 transformers 前向生成（8.95B）、vLLM 0.25.0 引擎加载生成全通过。冒烟后服务已恢复。卡位地图：0-1 gemma-it、2-3 JYHLLM、4-7 gemma-ita（均用户自有）。
+
+## 八、SFT 启动准备（当前状态）
+
+- 训练数据：train 5,542 + val 110（2% loss 验证集，固定种子）；
+- train_sft.sh 按 verl 0.9.1 配置结构重写（engine/optim 分组、val_files、test_freq=50），hydra dry-run 逐字段验证落位；模型软链指向主目录；
+- GPU 容器 `shopping-gpu` 在跑（透传 4-7 卡，容器内编号 0-3）；
+- 用户定下并行方案：物理 6-7 卡跑 SFT（容器内 CUDA_VISIBLE_DEVICES=2,3）、物理 4-5 卡跑 Base 基线评测（evaluate_model.py，冻结 eval 1,092 条）；
+- **当前卡点**：SFT 启动报 FlashAttention2 未安装（verl 0.9.1 FSDP 默认开）。flash-attn 无预编译包不装，正解是配置改 SDPA 注意力——已移交新 Agent 处理（提示词已交）；
+- SFT 预计时长 2~3 小时（双 A800、BF16、动态 batch）；Base 评测预计半天内出数。
+
+## 九、追加经验
+
+6. `torch.cuda.is_available()` 会返回假 True（驱动过旧时真正初始化才报错），CUDA 验证必须真做 GPU 计算；
+7. 容器内 `CUDA_VISIBLE_DEVICES` 用容器本地编号（透传后重编号），不是宿主机编号；
+8. verl 大版本间配置结构会变（0.8→0.9 的 model/engine/optim 从平铺变分组），升级后必须 hydra dry-run 重新核对字段；
+9. 三档对照的第一档（原模型零样本基线）必须在 SFT 前跑掉，否则提升幅度无从对比——本次差点跳过，用户拦住了。

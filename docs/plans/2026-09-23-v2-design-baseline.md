@@ -101,10 +101,6 @@
 - 无效任务可以被审计和单独报告，但不能静默删除来提高指标。
 - 开发集和训练过程评测从 `tag=train` 中另行划分。
 - 开发集（2026-09-23 确认）：从验收后的训练池中分层抽取约 1,050 条（5%）。分层骨架为 difficulty × domain × 画像条件（3×9×3=81 格，实测最小格约 20 条，可行）；top-level category 数百个，只做覆盖度报告、不做硬分层。dev 不进 SFT、不进 GRPO，仅用于训练中评估、checkpoint 选择和 Rubric 迭代。
-- 准入契约（2026-09-28 确认，与 AGENTS.md 同一定义）：
-  - **评测严格成功**：完整 `gold_purchase` 终止结果且 `reward_valid=true`，正式指标唯一口径。
-  - **SFT 教材准入**：`reward_valid=true` 且（完整 `gold_purchase` 或经冻结 Jev 判定 `fully_satisfies` 的替代购买）；每条替代教材保留 Jev 判定依据与完整终止结果备审计。当前教材构成：gold 5,391 / Jev 审核替代 461（partial_alternative 455 + valid_alternative 6）。
-  - **数据隔离**：训练数据不得与 V2 评测集重叠。旧版 `data/evaluation/tasks.jsonl`（Final-200）退出 V2，与 SFT 语料历史重叠的 63 条仅作迁移核对，不进入任何活动评测；V2 评测集由冻结 `tag=eval` 切分构建并按稳定任务标识严格去重。
 
 ## 5. Teacher 与轨迹数据
 
