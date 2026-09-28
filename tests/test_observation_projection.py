@@ -17,20 +17,28 @@ from shopping_grpo.environment.observation import render_structured_observation
 
 
 def search_page(product_count=12, page=1):
-    segments = [
-        "Instruction:",
-        "find a useful product",
-        "Back to Search",
-        f"Page {page} (Total results: 40)",
-        "Next >",
-    ]
     buttons = ["back to search", "next >"]
+    lines = [
+        "[SHOPPING_OBSERVATION_V2]",
+        "page_type: search_results",
+        "query: useful product",
+        "normalized_query: useful product",
+        (
+            f"Page {page} of 2 (Total results: 40; "
+            f"ranks {(page - 1) * 20 + 1}-{(page - 1) * 20 + product_count})"
+        ),
+        "格式: rank|asin|price|brand|category|key_attributes|title",
+    ]
     for index in range(product_count):
         asin = f"{100000000000 + index}"
-        segments.extend([asin, f"product title {index} " + "x" * 40, f"{index + 1}.0"])
+        lines.append(
+            f"{index + 1}|{asin}|{index + 1}.0|brand|category|attr|"
+            f"product title {index} " + "x" * 40
+        )
         buttons.append(asin)
+    lines.append(f"products_shown: {product_count}")
     return (
-        " [SEP] ".join(segments)
+        "\n".join(lines)
         + "\n\n搜索功能是否可用: False"
         + "\n\n可点击的按钮: "
         + json.dumps(buttons, ensure_ascii=False)
@@ -89,7 +97,7 @@ class ObservationProjectionTest(unittest.TestCase):
             search_top_k=20,
         )
 
-        self.assertIn("page: Page 2", visible)
+        self.assertIn("Page 2 of 2", visible)
         self.assertEqual(product_ids(visible), product_ids(raw))
 
     def test_capacity_mismatch_fails_instead_of_silently_dropping_products(self):

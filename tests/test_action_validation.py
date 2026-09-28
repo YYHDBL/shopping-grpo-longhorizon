@@ -1,6 +1,10 @@
 import unittest
 
-from shopping_grpo.environment.actions import action_reject_reason, product_ids
+from shopping_grpo.environment.actions import (
+    action_reject_reason,
+    product_ids,
+    subpage_visit_key,
+)
 
 
 class ActionValidationTest(unittest.TestCase):
@@ -51,6 +55,44 @@ class ActionValidationTest(unittest.TestCase):
             '\n\n可点击的按钮: ["back to search"]'
         )
         self.assertEqual(product_ids(observation), [])
+
+    def test_subpage_repeated_visit_is_rejected(self):
+        """同一商品同一子页第二次访问被守卫拒绝。"""
+        observation = (
+            "[SHOPPING_OBSERVATION_V2]\n"
+            "page_type: product_detail\n"
+            "asin: 747848614498\n"
+            "title: 测试商品\n"
+            '可点击的按钮: ["back to search", "description", "buy now"]'
+        )
+        self.assertIsNone(
+            action_reject_reason("view_description", {}, observation)
+        )
+        self.assertIsNone(
+            action_reject_reason(
+                "view_description",
+                {},
+                observation,
+                visited_subpages={("747848614498", "Features")},
+            )
+        )
+        self.assertEqual(
+            action_reject_reason(
+                "view_description",
+                {},
+                observation,
+                visited_subpages={("747848614498", "Description")},
+            ),
+            "subpage_already_visited",
+        )
+
+    def test_subpage_key_extracts_asin_from_detail_page(self):
+        observation = "asin: 747848614498\ntitle: 测试商品\n"
+        self.assertEqual(
+            subpage_visit_key("view_reviews", observation),
+            ("747848614498", "Reviews"),
+        )
+        self.assertIsNone(subpage_visit_key("buy_now", observation))
 
 
 if __name__ == "__main__":

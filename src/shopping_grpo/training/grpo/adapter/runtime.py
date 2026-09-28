@@ -61,6 +61,7 @@ def make_runtime_state(task_id: int, max_steps: int) -> dict:
         "latest_observation_truncated": False,
         "observation_footer_failures": 0,
         "guard_rejection_count": 0,
+    "visited_subpages": set(),
         "guard_rejection_reason_counts": {},
         "guard_rejection_after_truncation_count": 0,
         "action_attempt_after_truncation_count": 0,
@@ -92,8 +93,6 @@ def record_observation_projection(state: dict, meta: dict) -> None:
 
 def record_action_attempt(state: dict, tool_name: str, parameters: dict, observation: str) -> None:
     """记录环境动作尝试，并统计最近三次中的重复签名。"""
-    if tool_name == "think":
-        return
     canonical_parameters = json.dumps(
         parameters,
         ensure_ascii=False,

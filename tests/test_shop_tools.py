@@ -49,7 +49,7 @@ class ShopToolsTest(unittest.TestCase):
         self.assertIn("Buy Now", schemas["buy_now"]["description"])
         self.assertIn("品类正确", schemas["buy_now"]["description"])
         self.assertIn("品牌、型号与核心功能、规格属性", schemas["buy_now"]["description"])
-        self.assertIn("不要调用 think 工具", schemas["think"]["description"])
+        self.assertNotIn("think", schemas)
 
     def test_finish_description_matches_reward_abstain_gate(self):
         schemas = {

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
+
+# 直连 opener：绕过环境代理。
+_DIRECT_OPENER = build_opener(ProxyHandler({}))
 
 
 class ContextBudgetError(RuntimeError):
@@ -181,7 +184,7 @@ class VllmChatTokenCounter:
                 headers=headers,
                 method="POST",
             )
-            with urlopen(request, timeout=self.timeout) as raw:
+            with _DIRECT_OPENER.open(request, timeout=self.timeout) as raw:
                 response = json.loads(raw.read().decode("utf-8"))
         count = response.get("count")
         if not isinstance(count, int) or count < 0:
@@ -218,7 +221,7 @@ class VllmTextTokenCounter:
                 headers=headers,
                 method="POST",
             )
-            with urlopen(request, timeout=self.timeout) as raw:
+            with _DIRECT_OPENER.open(request, timeout=self.timeout) as raw:
                 response = json.loads(raw.read().decode("utf-8"))
         count = response.get("count")
         if not isinstance(count, int) or count < 0:

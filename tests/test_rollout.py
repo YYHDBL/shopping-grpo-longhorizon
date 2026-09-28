@@ -12,6 +12,7 @@ from shopping_grpo.evaluation.rollout import (
     CollectionInfrastructureError,
     OpenAIChatClient,
     SYSTEM_PROMPT,
+    TEACHER_SYSTEM_PROMPT,
     collect_tasks,
     collect_for_task,
     completed_task_attempts,
@@ -32,7 +33,14 @@ class FakeEnv:
         self.actions.append(action)
         if action == "search[乳胶枕]":
             return {
-                "instruction": "results [SEP] 100000000001 [SEP] 乳胶枕",
+                "instruction": (
+                    "[SHOPPING_OBSERVATION_V2]\n"
+                    "page_type: search_results\n"
+                    "1|100000000001|999.0|测试店|测试类|attr|测试商品\n"
+                    "\n"
+                    "搜索功能是否可用: True\n"
+                    '可点击的按钮: ["100000000001"]'
+                ),
                 "reward": 0.0,
                 "done": False,
             }
@@ -84,7 +92,14 @@ class GuardRecoveryEnv(FakeEnv):
         self.actions.append(action)
         if action == "search[乳胶枕]":
             return {
-                "instruction": "results [SEP] 100000000001 [SEP] 乳胶枕",
+                "instruction": (
+                    "[SHOPPING_OBSERVATION_V2]\n"
+                    "page_type: search_results\n"
+                    "1|100000000001|999.0|测试店|测试类|attr|测试商品\n"
+                    "\n"
+                    "搜索功能是否可用: True\n"
+                    '可点击的按钮: ["100000000001"]'
+                ),
                 "reward": 0.0,
                 "done": False,
             }
@@ -143,30 +158,39 @@ def assistant_tool(name, arguments, call_id="call_1"):
 
 
 class RolloutTest(unittest.TestCase):
-    def test_default_prompt_matches_reward_policy(self):
-        """默认提示词应表达 Reward v3 的购买优先级和停止门槛。"""
+    def test_student_prompt_contains_protocol_only(self):
+        """Student 版只含协议层：环境约定齐备，购物决策规则一条不进。"""
         self.assertIn("单轮购物任务", SYSTEM_PROMPT)
         self.assertIn("不得向用户追问", SYSTEM_PROMPT)
-        self.assertIn("buy_now", SYSTEM_PROMPT)
         self.assertIn("不要在任务结束前输出最终答复", SYSTEM_PROMPT)
         self.assertIn("当前页面是动作合法性的唯一依据", SYSTEM_PROMPT)
         self.assertIn("信息子页", SYSTEM_PROMPT)
         self.assertIn("必须先调用当前页面可见的 `prev_page` 或 `back_to_search` 返回", SYSTEM_PROMPT)
         self.assertIn("无参数工具", SYSTEM_PROMPT)
-        self.assertIn("历史 observation 可以用于记住和比较候选", SYSTEM_PROMPT)
+        self.assertIn("历史 observation 可用于记住和比较候选", SYSTEM_PROMPT)
         self.assertIn("不能直接点击历史页面中的 ASIN", SYSTEM_PROMPT)
-        self.assertIn("品类必须正确", SYSTEM_PROMPT)
-        self.assertIn("不得超过用户明确预算", SYSTEM_PROMPT)
-        self.assertIn("品类 > 预算 > 品牌 > 型号与核心功能 > 规格属性", SYSTEM_PROMPT)
-        self.assertIn("Reviews 只用于辅助判断使用体验", SYSTEM_PROMPT)
-        self.assertIn("不能用于确认型号、官方功能、规格或价格", SYSTEM_PROMPT)
-        self.assertIn("所有影响可购买 variant 的必要规格轴", SYSTEM_PROMPT)
-        self.assertIn("finish_without_purchase", SYSTEM_PROMPT)
-        self.assertIn("多次有实质差异的搜索和多个候选核验", SYSTEM_PROMPT)
-        self.assertIn("没有明显值得继续核验的候选", SYSTEM_PROMPT)
-        self.assertIn("是否达到结束资格由环境判断", SYSTEM_PROMPT)
-        self.assertIn("不要连续重复同一动作", SYSTEM_PROMPT)
-        self.assertIn("不要调用 `think` 工具", SYSTEM_PROMPT)
+        for decision_rule in (
+            "品类 > 预算 > 品牌",
+            "直接调用 `buy_now`",
+            "搜索与候选探索",
+            "防止循环",
+            "多次有实质差异的搜索",
+        ):
+            self.assertNotIn(decision_rule, SYSTEM_PROMPT)
+
+    def test_teacher_prompt_adds_decision_rules(self):
+        """Teacher 版在协议层之上追加决策规则，供采集教材使用。"""
+        self.assertIn("品类 > 预算 > 品牌 > 型号与核心功能 > 规格属性", TEACHER_SYSTEM_PROMPT)
+        self.assertIn("满足用户全部明确约束时，直接调用 `buy_now`", TEACHER_SYSTEM_PROMPT)
+        self.assertIn("所有影响可购买 variant 的必要规格轴", TEACHER_SYSTEM_PROMPT)
+        self.assertIn("finish_without_purchase", TEACHER_SYSTEM_PROMPT)
+        self.assertIn("多次有实质差异的搜索和多个候选核验", TEACHER_SYSTEM_PROMPT)
+        self.assertIn("是否达到结束资格由环境判断", TEACHER_SYSTEM_PROMPT)
+        self.assertIn("不要连续重复同一动作", TEACHER_SYSTEM_PROMPT)
+        self.assertIn("同一商品的同一信息子页只需查看一次", TEACHER_SYSTEM_PROMPT)
+        self.assertIn("回到已核验的最优候选完成购买", TEACHER_SYSTEM_PROMPT)
+        self.assertNotIn("Reviews", TEACHER_SYSTEM_PROMPT)
+        self.assertNotIn("Reviews", SYSTEM_PROMPT)
 
     def test_guard_gives_a_return_only_instruction_on_information_subpage(self):
         """子页误操作后，守卫应明确引导模型先返回，不重复猜测按钮。"""
@@ -230,7 +254,7 @@ class RolloutTest(unittest.TestCase):
             for schema in client.requests[0]["tools"]
         ]
         self.assertIn("finish_without_purchase", tool_names)
-        self.assertIn("finish_without_purchase", client.requests[0]["messages"][0]["content"])
+        self.assertIn("合理结束", client.requests[0]["messages"][0]["content"])
         self.assertTrue(env.released)
 
     def test_collect_for_task_blocks_invalid_click_then_keeps_clean_recovery(self):
@@ -275,7 +299,7 @@ class RolloutTest(unittest.TestCase):
             def step(self, action):
                 self.actions.append(action)
                 if action == "search[乳胶枕]":
-                    return {"instruction": "results [SEP] 100000000001", "reward": 0.0, "done": False}
+                    return {"instruction": "[SHOPPING_OBSERVATION_V2]\npage_type: search_results\n1|100000000001|999.0|测试店|测试类|attr|测试商品\n\n搜索功能是否可用: True\n可点击的按钮: [\"100000000001\"]", "reward": 0.0, "done": False}
                 if action == "click[100000000001]":
                     return {
                         "instruction": 'detail\n\n可点击的按钮: ["满天星", "Description", "Buy Now"]',
@@ -334,7 +358,7 @@ class RolloutTest(unittest.TestCase):
             def step(self, action):
                 self.actions.append(action)
                 if action == "search[乳胶枕]":
-                    return {"instruction": "results [SEP] 100000000001", "reward": 0.0, "done": False}
+                    return {"instruction": "[SHOPPING_OBSERVATION_V2]\npage_type: search_results\n1|100000000001|999.0|测试店|测试类|attr|测试商品\n\n搜索功能是否可用: True\n可点击的按钮: [\"100000000001\"]", "reward": 0.0, "done": False}
                 if action == "click[100000000001]":
                     return {
                         "instruction": 'detail\n\n可点击的按钮: ["满天星", "Buy Now"]',

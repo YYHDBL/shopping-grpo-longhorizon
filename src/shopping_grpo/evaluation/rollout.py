@@ -12,10 +12,17 @@ from datetime import datetime, timezone
 from http.client import RemoteDisconnected
 from urllib.error import URLError
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
+
+# 直连 opener：绕过环境代理，训练与采集链路不依赖 SSH 隧道。
+_DIRECT_OPENER = build_opener(ProxyHandler({}))
 from uuid import uuid4
 
-from shopping_grpo.environment.actions import action_guard_tool_message, action_reject_reason
+from shopping_grpo.environment.actions import (
+    action_guard_tool_message,
+    action_reject_reason,
+    subpage_visit_key,
+)
 from shopping_grpo.environment.context import (
     ContextBudgetError,
     VllmChatTokenCounter,
@@ -31,19 +38,30 @@ from shopping_grpo.environment.tools import (
 from shopping_grpo.environment.observation import render_structured_observation
 
 
-SYSTEM_PROMPT = """你是一个购物 Agent，负责在 ShopSimulator 中替用户完成一次单轮购物任务。
+# Student 基础版：仅协议层（环境接口约定）。SFT 训练、RL rollout 与正式评测使用。
+# 决策规则不允许出现在这里：购物判断力必须通过训练进入模型权重。
+STUDENT_SYSTEM_PROMPT = """你是一个购物 Agent，负责在 ShopSimulator 中替用户完成一次单轮购物任务。
 
-用户的完整需求只会在开头给出。不得向用户追问、确认、告别，也不要假设存在用户对话工具。你只能调用提供的标准工具与商店交互。目标是在有限步骤内找到整体最符合需求的可购买商品；精确满足全部要求的商品最好，经过有效探索仍无法完成时应合理结束，不能错误购买或无效循环。
+用户的完整需求只会在开头给出。不得向用户追问、确认、告别，也不要假设存在用户对话工具。你只能调用提供的标准工具与商店交互，在有限步骤内完成购买或合理结束。
 
 执行规则：
-1. 动作合法性与历史比较。当前页面是动作合法性的唯一依据；历史 observation 可以用于记住和比较候选，但不能直接点击历史页面中的 ASIN、按钮或规格。每次工具返回后先阅读最新 observation 中的“可点击的按钮”，每个 assistant 回合只调用一个工具。
-2. 页面状态与参数。Description、Features、Reviews、Attributes 都是信息子页：一旦进入这类子页，必须先调用当前页面可见的 `prev_page` 或 `back_to_search` 返回；不得直接切换到另一个信息子页、选择规格、购买或搜索。无参数工具（查看、翻页、返回、购买）必须传严格的 `{}`；只有 `search_products` 使用 `query`、`open_product` 使用 `asin`、`select_option` 使用 `value`。
-3. 搜索与候选探索。查询应简洁，优先使用品类和最有区分度的品牌、型号、核心功能或规格，不要机械复制整段需求。结果不理想时，缩短查询、更换真正不同的关键词或翻页；出现有希望的商品时应打开核验。不要重复相同查询，也不要只做同义改写却反复得到相同候选。
-4. 固定选择优先级。按“品类 > 预算 > 品牌 > 型号与核心功能 > 规格属性”比较候选。品类必须正确；选择具体规格后的实际价格不得超过用户明确预算。品类不符、价格未知或超预算时绝不能购买。在通过这两个门槛的候选中，依次优先满足品牌、型号与核心功能、规格属性；全部要求都满足的候选最好。
-5. 证据、规格与购买。品牌、型号、规格、功能和价格优先依据结构化字段、商品详情、Description、Features 和 Attributes；Reviews 只用于辅助判断使用体验，不能用于确认型号、官方功能、规格或价格。先完成必要的商品核验，再为最终候选补齐当前商品所有影响可购买 variant 的必要规格轴；不要为了临时浏览而随意选择规格。同一规格轴只选择一个当前页面可见的值，并以完整 variant 的实际价格判断预算。只有 `Buy Now` 当前可见，且商品通过品类和预算门槛，并在其余维度上是已核验候选中的最佳选择时，才调用 `buy_now`。
-6. 主动结束。经过多次有实质差异的搜索和多个候选核验，仍没有可接受商品，并且当前没有明显值得继续核验的候选时，调用 `finish_without_purchase`。不得过早结束，也不要为了增加搜索次数继续无效探索；是否达到结束资格由环境判断。
-7. 防止循环和非法动作。不要连续重复同一动作，也不要在相同结果、商品或子页之间无目的往返；后续操作应带来新候选、新商品信息、新规格选择或新的需求证据。不要调用 `think` 工具。若 tool 返回“本地动作守卫拒绝，未执行”，依据错误消息和最新 observation 改为一个合法动作，不要重复被拒绝的调用。不要在任务结束前输出最终答复或推荐总结；只有环境报告任务结束后才停止。
+1. 动作合法性。当前页面是动作合法性的唯一依据；历史 observation 可用于记住和比较候选，但不能直接点击历史页面中的 ASIN、按钮或规格。每次工具返回后先阅读最新 observation 中的“可点击的按钮”，每个 assistant 回合只调用一个工具。
+2. 页面状态与参数。Description、Features、Attributes 等是信息子页：一旦进入子页，必须先调用当前页面可见的 `prev_page` 或 `back_to_search` 返回；不得直接切换到另一个信息子页、选择规格、购买或搜索。无参数工具（查看、翻页、返回、购买）必须传严格的 `{}`；只有 `search_products` 使用 `query`、`open_product` 使用 `asin`、`select_option` 使用 `value`。
+3. 守卫反馈。若 tool 返回“本地动作守卫拒绝，未执行”，依据错误消息和最新 observation 改为一个合法动作，不要重复被拒绝的调用。不要在任务结束前输出最终答复或推荐总结；只有环境报告任务结束后才停止。
 """
+
+# Teacher 采集版：协议层 + 决策规则。只在采集教材轨迹时使用，绝不进入训练样本。
+TEACHER_SYSTEM_PROMPT = STUDENT_SYSTEM_PROMPT + """
+4. 搜索与候选探索。查询应简洁，优先使用品类和最有区分度的品牌、型号、核心功能或规格，不要机械复制整段需求。结果不理想时，缩短查询、更换真正不同的关键词或翻页；出现有希望的商品时应打开核验。不要重复相同查询，也不要只做同义改写却反复得到相同候选。
+5. 固定选择优先级。按“品类 > 预算 > 品牌 > 型号与核心功能 > 规格属性”比较候选。品类必须正确；选择具体规格后的实际价格不得超过用户明确预算。品类不符、价格未知或超预算时绝不能购买。在通过这两个门槛的候选中，依次优先满足品牌、型号与核心功能、规格属性。
+6. 证据与核验。品牌、型号、规格、功能和价格以商品详情页的结构化字段为准；结构化字段足以核验需求约束时，不需要翻信息子页。为最终候选补齐当前商品所有影响可购买 variant 的必要规格轴，同一规格轴只选择一个当前页面可见的值，并以完整 variant 的实际价格判断预算。
+7. 收敛购买。候选通过品类和预算门槛、满足用户全部明确约束时，直接调用 `buy_now` 完成购买，无需为寻找更优候选而继续搜索或比较。连续多次搜索未出现新的合格候选时，回到已核验的最优候选完成购买。
+8. 主动结束。经过多次有实质差异的搜索和多个候选核验，仍没有可接受商品，并且当前没有明显值得继续核验的候选时，调用 `finish_without_purchase`。不得过早结束；是否达到结束资格由环境判断。
+9. 防止循环。不要连续重复同一动作，也不要在相同结果、商品或子页之间无目的往返；后续操作应带来新候选、新商品信息、新规格选择或新的需求证据。同一商品的同一信息子页只需查看一次。
+"""
+
+# 兼容别名：无显式 prompt 时的兜底用 Student 基础版。
+SYSTEM_PROMPT = STUDENT_SYSTEM_PROMPT
 
 
 MAX_BLOCKED_TOOL_CALLS = 3
@@ -87,6 +105,8 @@ class OpenAIChatClient:
         self.top_p = float(top_p)
         self.timeout = timeout
         self.max_tokens = int(max_tokens)
+        self.last_usage = None
+        self.total_usage = {"input": 0, "output": 0, "cached": 0}
         if self.max_tokens < 1:
             raise ValueError("max_tokens must be positive")
         self.thinking = bool(thinking)
@@ -156,7 +176,7 @@ class OpenAIChatClient:
                 "model": self.model,
                 "input": _responses_input(request_messages),
                 "tools": _responses_tools(tools),
-                "tool_choice": "auto",
+                "tool_choice": "required",
                 "max_output_tokens": self.max_tokens,
             }
         else:
@@ -164,7 +184,7 @@ class OpenAIChatClient:
                 "model": self.model,
                 "messages": request_messages,
                 "tools": tools,
-                "tool_choice": "auto",
+                "tool_choice": "required",
                 # 约束单个 assistant 回合的输出；--max-model-len 只限制上下文，
                 # 不能防止模型在未调用工具时持续生成纯文本。
                 "max_tokens": self.max_tokens,
@@ -190,6 +210,8 @@ class OpenAIChatClient:
             # 避免 Cloudflare 将 Python urllib 默认客户端识别为自动化流量。
             "User-Agent": "shopping-grpo-longhorizon/0.1",
         }
+        if getattr(self, "extra_headers", None):
+            headers.update(self.extra_headers)
         url = self.base_url if self.responses_api else f"{self.base_url}/chat/completions"
         for attempt in range(MODEL_COMPLETION_RETRIES + 1):
             try:
@@ -202,8 +224,17 @@ class OpenAIChatClient:
                         headers=headers,
                         method="POST",
                     )
-                    with urlopen(request, timeout=self.timeout) as raw:
+                    # 直连：绕过环境代理，采集不依赖 SSH 隧道。
+                    with _DIRECT_OPENER.open(request, timeout=self.timeout) as raw:
                         response = json.loads(raw.read().decode("utf-8"))
+                self.last_usage = response.get("usage")
+                usage = self.last_usage or {}
+                self.total_usage["input"] += usage.get("prompt_tokens") or 0
+                self.total_usage["output"] += usage.get("completion_tokens") or 0
+                self.total_usage["cached"] += (
+                    (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
+                    or 0
+                )
                 return _response_message(response, responses_api=self.responses_api)
             except (RemoteDisconnected, TimeoutError, URLError):
                 if attempt >= MODEL_COMPLETION_RETRIES:
@@ -318,6 +349,7 @@ def collect_for_task(
         tool_schemas = tools or SHOP_TOOL_SCHEMAS
         consecutive_blocked_calls = 0
         latest_observation_truncated = False
+        visited_subpages = set()
 
         while len(trajectory["steps"]) < int(max_steps):
             # 先请求模型，再校验动作；工具结果会追加到 messages，成为下一轮上下文。
@@ -349,8 +381,9 @@ def collect_for_task(
                 )
             tool_calls = assistant.get("tool_calls") or []
             if not tool_calls:
+                # tool_choice=required 下属于协议异常：记录明确状态，不当作正常交卷。
                 messages.append(assistant)
-                trajectory["status"] = "assistant_final"
+                trajectory["status"] = "model_no_tool_call"
                 break
             tool_call = tool_calls[0]
             try:
@@ -359,6 +392,7 @@ def collect_for_task(
                     name,
                     arguments,
                     latest_observation,
+                    visited_subpages=visited_subpages,
                 )
             except Exception as exc:
                 reason = f"invalid_tool_call:{exc.__class__.__name__}"
@@ -384,6 +418,8 @@ def collect_for_task(
                 return trajectory
             messages.append(assistant)
             # 只有通过当前 observation 守卫的调用才会触碰环境并消耗一个执行步骤。
+            # 子页去重键在执行前从当前（详情页）observation 提取。
+            subpage_key = subpage_visit_key(name, latest_observation)
             step = _execute_tool_call(env, tool_call, len(trajectory["steps"]))
             raw_observation = step["observation"]
             projector = getattr(client, "project_observation", None)
@@ -398,6 +434,8 @@ def collect_for_task(
                     step["observation"] = visible_observation
                     step["projection"] = projection
             trajectory["steps"].append(step)
+            if subpage_key is not None:
+                visited_subpages.add(subpage_key)
             consecutive_blocked_calls = 0
             latest_observation = step["observation"]
             latest_observation_truncated = bool(
