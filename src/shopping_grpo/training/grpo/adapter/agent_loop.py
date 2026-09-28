@@ -16,7 +16,6 @@ from shopping_grpo.environment.projection import (
     project_observation,
 )
 from shopping_grpo.training.grpo.adapter.runtime import (
-    apply_reward_length_shaping,
     current_runtime_state,
     record_observation_projection,
     reward_breakdown,
@@ -47,10 +46,6 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
         observation_detail_token_budget=4096,
         observation_generic_token_budget=768,
         observation_search_top_k=20,
-        reward_length_shaping_enable=False,
-        reward_length_soft_threshold=20,
-        reward_length_penalty_per_step=0.01,
-        reward_length_max_penalty=0.15,
         env_factory=None,
         **kwargs,
     ):
@@ -70,14 +65,6 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
         self.observation_detail_token_budget = int(observation_detail_token_budget)
         self.observation_generic_token_budget = int(observation_generic_token_budget)
         self.observation_search_top_k = int(observation_search_top_k)
-        self.reward_length_shaping_enable = (
-            reward_length_shaping_enable
-            if isinstance(reward_length_shaping_enable, bool)
-            else str(reward_length_shaping_enable).lower() == "true"
-        )
-        self.reward_length_soft_threshold = int(reward_length_soft_threshold)
-        self.reward_length_penalty_per_step = float(reward_length_penalty_per_step)
-        self.reward_length_max_penalty = float(reward_length_max_penalty)
         maximum_context_input = (
             self.context_window_tokens
             - self.context_generation_reserve_tokens
@@ -100,12 +87,6 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
             raise ValueError("observation_search_top_k must be positive")
         if self.reward_mode not in {"native", "constraint_aware"}:
             raise ValueError(f"unknown shopping reward mode: {self.reward_mode!r}")
-        if self.reward_length_shaping_enable and self.reward_mode != "constraint_aware":
-            raise ValueError("reward length shaping requires constraint_aware reward mode")
-        if not 0 < self.reward_length_soft_threshold < self.max_steps:
-            raise ValueError("reward_length_soft_threshold must be between 1 and max_steps")
-        if min(self.reward_length_penalty_per_step, self.reward_length_max_penalty) < 0:
-            raise ValueError("reward length penalties must be non-negative")
         self.env_factory = env_factory
 
     async def _handle_generating_state(
@@ -271,14 +252,7 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
                 state["termination_reason"] = state["error"]
                 state["terminate"] = True
             # 父类结束后统一从环境状态结算，避免把中途异常当作正常终局奖励。
-            breakdown = apply_reward_length_shaping(
-                reward_breakdown(state),
-                state,
-                enabled=getattr(self, "reward_length_shaping_enable", False),
-                soft_threshold=getattr(self, "reward_length_soft_threshold", 20),
-                penalty_per_step=getattr(self, "reward_length_penalty_per_step", 0.01),
-                max_penalty=getattr(self, "reward_length_max_penalty", 0.15),
-            )
+            breakdown = reward_breakdown(state)
             output.reward_score = (
                 float(breakdown["total"])
                 if self.reward_mode == "constraint_aware"
@@ -297,7 +271,6 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
                 "infrastructure_invalid": bool(state["infrastructure_invalid"]),
                 "action_attempts": int(state["action_attempt_count"]),
                 "repeat_actions": int(state["repeat_action_count"]),
-                "overlong": bool(breakdown.get("overlong", False)),
                 "reward_mode": self.reward_mode,
                 "reward_version": state.get("reward_version"),
                 "reward_type": state.get("reward_type"),
@@ -334,8 +307,6 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
                     state["action_attempt_after_truncation_count"]
                 ),
             }
-            if session.trace_target is not None:
-                output.extra_fields["trace_target"] = session.trace_target
             return output
         finally:
             await session.close()

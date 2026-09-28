@@ -22,15 +22,6 @@ class VerlCompatTest(unittest.TestCase):
         utils.npu_flash_attn_utils = fallback
         verl = ModuleType("verl")
         verl.utils = utils
-        trainer = ModuleType("verl.trainer")
-        ppo = ModuleType("verl.trainer.ppo")
-        ray_trainer = ModuleType("verl.trainer.ppo.ray_trainer")
-
-        class RayPPOTrainer:
-            def _update_actor(self, batch):
-                return batch
-
-        ray_trainer.RayPPOTrainer = RayPPOTrainer
 
         with patch.dict(
             sys.modules,
@@ -39,9 +30,6 @@ class VerlCompatTest(unittest.TestCase):
                 "verl.utils": utils,
                 "verl.utils.attention_utils": attention,
                 "verl.utils.npu_flash_attn_utils": fallback,
-                "verl.trainer": trainer,
-                "verl.trainer.ppo": ppo,
-                "verl.trainer.ppo.ray_trainer": ray_trainer,
             },
         ):
             from shopping_grpo.training.grpo.compat import install_torch_padding_fallback
@@ -49,7 +37,6 @@ class VerlCompatTest(unittest.TestCase):
             install_torch_padding_fallback()
 
         self.assertEqual(attention._get_attention_functions(), expected)
-        self.assertTrue(RayPPOTrainer._update_actor._shopping_trace)
 
 
 if __name__ == "__main__":  # pragma: no cover

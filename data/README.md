@@ -1,15 +1,15 @@
 # Data
 
-Only the datasets used by the tutorial are kept here.
+V2 活动数据只保留 GRPO 提示集与环境冻结清单：
 
 | Stage | Files | Rows |
 |---|---|---:|
-| SFT | `sft/train.jsonl`, `sft/validation.jsonl` | 800 / 200 |
 | GRPO | `grpo/train.parquet`, `grpo/validation.parquet` | 1000 / 50 |
-| Evaluation | `evaluation/tasks.jsonl` (Final-200 Clean) | 200 |
+| Environment | `environment.json`（Environment v2.1 冻结 manifest） | — |
 
-Adjacent `metadata.json` files record SHA256 checksums and collection
-provenance. All SFT, GRPO and evaluation splits are task-disjoint. Generated
-trajectories belong under `outputs/`, never under `data/`. Use
-`scripts/collect_sft_data.py` to create a new audited SFT dataset before
-promoting its train/validation files into this directory.
+`grpo/metadata.json` 记录 SHA256 校验与来源。SFT 教材由
+`scripts/build_sft_dataset.py` + `scripts/export_sft_parquet.py` 生成在
+`outputs/sft_dataset/`，评测任务来自 `outputs/split/tasks_final.jsonl` 的
+冻结 `tag=eval` 切分；生成产物一律落在 `outputs/`，不进入 `data/`。
+V1 时代的 Final-200 评测、SFT 教材与课程数据已随 V2 清理退出，仅存于
+Git 历史。

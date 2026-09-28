@@ -103,23 +103,6 @@ algorithm:
     rollout_rs: null
     loss_type: ppo_clip
 
-shopping_dynamic_sampling:
-  enable: true
-  metric: seq_reward
-  max_num_gen_batches: 3
-  max_consecutive_skipped_updates: 10
-  reward_tolerance: 1.0e-8
-
-shopping_trace:
-  enable: false
-  epsilon: 0.1
-  horizon: 3
-  discount: 0.8
-  terminal_weight: 2.0
-  outcome_weight: 1.0
-  turn_weight: 0.2
-  max_sequence_length: 24576
-
 reward_model:
   enable: false
 

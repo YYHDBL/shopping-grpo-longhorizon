@@ -107,15 +107,30 @@ def make_client(name):
 
 
 def judge_trajectory(trajectory, jev, record, thread_clients):
-    """在线验收：返回 (accepted: bool, reason: str)。"""
+    """在线验收：显式校验终止审计字段，替代购买必须经 Jev 判定。
+
+    返回 (accepted: bool, reason: str, audit: dict)。audit 携带终止审计与
+    （若有）JEV 结论，由 run_task 持久化到轨迹 meta 与任务状态，使每条
+    轨迹的准入依据可独立追溯。
+    """
     status = trajectory.get("status")
     terminal = trajectory.get("terminal_result") or {}
     reward_detail = terminal.get("reward_detail") or {}
     reward_type = reward_detail.get("reward_type")
+    audit = terminal_audit(trajectory)
     if status in STRUCTURAL_FAIL:
-        return False, f"structural:{status}"
+        return False, f"structural:{status}", audit
+    # 准入硬性前置：完整终止状态 + reward_valid=true + over=true。
+    if not terminal or not isinstance(reward_detail, dict) or not reward_type:
+        return False, "terminal_incomplete", audit
+    if terminal.get("over") is not True:
+        return False, "terminal_not_over", audit
+    if terminal.get("reward_valid") is not True or reward_detail.get("reward_valid") is not True:
+        return False, "reward_invalid", audit
+    if not terminal.get("termination_reason"):
+        return False, "terminal_incomplete", audit
     if reward_type == "gold_purchase":
-        return True, "gold"
+        return True, "gold", audit
     if reward_type in {"valid_alternative_purchase", "partial_alternative_purchase"}:
         purchase = terminal.get("purchase") or {}
         try:
@@ -127,11 +142,40 @@ def judge_trajectory(trajectory, jev, record, thread_clients):
                 f"关键属性 {'、'.join(record.get('attribute') or [])}"
             )
         except JevApiError as exc:
-            return False, f"jev_error:{str(exc)[:40]}"
+            return False, f"jev_error:{str(exc)[:40]}", audit
+        audit["jev_verdict"] = {
+            key: verdict.get(key)
+            for key in (
+                "choice", "probabilities", "confidence", "model_reported",
+                "provider", "generation_id", "request_hash", "rubric_version",
+            )
+        }
         if verdict["choice"] == "fully_satisfies":
-            return True, "jev:fully_satisfies"
-        return False, f"jev:{verdict['choice']}"
-    return False, f"env:{reward_type or status}"
+            return True, "jev:fully_satisfies", audit
+        return False, f"jev:{verdict['choice']}", audit
+    return False, f"env:{reward_type or status}", audit
+
+
+def terminal_audit(trajectory):
+    """从终止结果提取审计快照：reward_valid/over/termination_reason/购买摘要。"""
+    terminal = trajectory.get("terminal_result") or {}
+    purchase = terminal.get("purchase") or {}
+    return {
+        "reward_type": (terminal.get("reward_detail") or {}).get("reward_type"),
+        "reward_valid": terminal.get("reward_valid"),
+        "over": terminal.get("over"),
+        "termination_reason": terminal.get("termination_reason"),
+        "purchase": (
+            {
+                "name": purchase.get("name"),
+                "price": purchase.get("price"),
+                "options": purchase.get("options"),
+                "instruction_text": purchase.get("instruction_text"),
+            }
+            if purchase
+            else None
+        ),
+    }
 
 
 def run_task(task, index_of, records_by_id, persona_pool, jev, teacher="glm"):
@@ -174,7 +218,7 @@ def run_task(task, index_of, records_by_id, persona_pool, jev, teacher="glm"):
             time.sleep(min(60, 2 ** env_failures))
             continue
         attempt += 1
-        accepted, reason = judge_trajectory(trajectory, jev, record, client)
+        accepted, reason, audit = judge_trajectory(trajectory, jev, record, client)
         infra_files += int(
             trajectory.get("status") == "error"
             or reason.startswith("structural:error"))
@@ -189,6 +233,7 @@ def run_task(task, index_of, records_by_id, persona_pool, jev, teacher="glm"):
                 .get("reward_detail", {}).get("reward_type"),
             "steps": len(trajectory.get("steps") or []),
             "status": trajectory.get("status"),
+            "audit": audit,
         }
         with (TRAJ / f"{task['record_id']}_{attempt}.json").open(
                 "w", encoding="utf-8") as f:
@@ -196,6 +241,7 @@ def run_task(task, index_of, records_by_id, persona_pool, jev, teacher="glm"):
         if accepted:
             return {"record_id": task["record_id"], "final": "accepted",
                     "attempts": attempt, "reason": reason,
+                    "audit": audit,
                     "usage": dict(client.total_usage)}
     final = ("teacher_hard" if infra_files < attempt else "env_exhausted")
     return {"record_id": task["record_id"], "final": final,

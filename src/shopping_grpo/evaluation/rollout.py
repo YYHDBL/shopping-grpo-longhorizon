@@ -10,7 +10,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 from http.client import RemoteDisconnected
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from pathlib import Path
 from urllib.request import ProxyHandler, Request, build_opener
 
@@ -530,7 +530,12 @@ def _is_infrastructure_failure(trajectory):
         return True
     error = trajectory.get("error") or {}
     error_type = error.get("type")
-    if error_type in {URLError.__name__, RemoteDisconnected.__name__, TimeoutError.__name__}:
+    if error_type in {
+        HTTPError.__name__,
+        URLError.__name__,
+        RemoteDisconnected.__name__,
+        TimeoutError.__name__,
+    }:
         return True
     if error_type == ShopHttpError.__name__:
         return True

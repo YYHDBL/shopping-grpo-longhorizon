@@ -7,6 +7,8 @@
 # 数据列约定（export_sft_parquet.py 产出）：
 #   messages:       list<struct>，assistant 的 arguments 为 map<string,string>；
 #                   arrow map 读回为 (key, value) 元组列表，这里归一化回 dict。
+#                   每条消息带 train 标记：守卫拒绝的 assistant 段 train=0，
+#                   其生成区间的 loss mask 置 0（仍参与上下文渲染）。
 #   tools:          完整工具 schema 的 JSON 字符串（保留 enum 等任意结构），
 #                   读回 json.loads 后与 SHOP_TOOL_SCHEMAS 一致。
 #   enable_thinking:bool，透传 apply_chat_template（全链路关思考）。
@@ -106,6 +108,7 @@ class ShoppingMultiTurnSFTDataset(Dataset):
             enable_thinking=enable_thinking)
         # 差分：每个 assistant 段由 [前缀+生成提示) 与 [含该段) 的 token 差确定。
         # 两处前缀都必须与整序列渲染严格一致，防止模板变化造成边界偏移。
+        # train=0 的 assistant 段（守卫拒绝动作）只参与上下文，不进 loss mask。
         segment_mask = torch.zeros(len(full_ids), dtype=torch.long)
         rendered_prefix = []
         for i, message in enumerate(messages):
@@ -127,7 +130,8 @@ class ShoppingMultiTurnSFTDataset(Dataset):
                 raise ValueError(
                     f"token boundary mismatch at message {i} of row {index}; "
                     "chat template is not prefix-consistent")
-            segment_mask[start:end] = 1
+            if int(message.get("train", 1)) == 1:
+                segment_mask[start:end] = 1
         if len(full_ids) > self.max_length:
             if self.truncation == "error":
                 raise ValueError(

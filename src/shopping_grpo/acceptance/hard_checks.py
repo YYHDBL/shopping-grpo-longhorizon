@@ -9,26 +9,40 @@
 
 from __future__ import annotations
 
+import importlib
 import re
 import sys
+import types
 from pathlib import Path
 from typing import Mapping
 
 HARD_CHECKS_VERSION = "acceptance-hard-v1"
 
 # 环境引擎路径：验收需要与 Reward 完全一致的 variant 价格逻辑。
-# 追加到 sys.path 末尾而非插到最前：ShopSimulator 目录里也有一个 scripts/
-# 包，插到最前会遮蔽仓库根目录的 scripts 包，导致全量测试收集失败。
+# 不把 ShopSimulator 目录加入 sys.path——那里也有一个 scripts 包，会遮蔽
+# 仓库根目录的 scripts 包并破坏全量测试收集。改为受控注册包后再走正常
+# 导入机制；web_agent_site 与其 engine 子包的 __init__ 均为空文件。
 _ENV_ENGINE = Path(__file__).resolve().parents[3] / (
     "environments/ShopSimulator/shop_env"
 )
-if str(_ENV_ENGINE) not in sys.path:
-    sys.path.append(str(_ENV_ENGINE))
 
-from web_agent_site.engine.variant_price import (  # noqa: E402
-    VARIANT_PRICE_VERSION,
-    resolve_variant_price,
-)
+
+def _load_variant_price():
+    site = _ENV_ENGINE / "web_agent_site"
+    if "web_agent_site" not in sys.modules:
+        package = types.ModuleType("web_agent_site")
+        package.__path__ = [str(site)]
+        sys.modules["web_agent_site"] = package
+    if "web_agent_site.engine" not in sys.modules:
+        engine = types.ModuleType("web_agent_site.engine")
+        engine.__path__ = [str(site / "engine")]
+        sys.modules["web_agent_site.engine"] = engine
+    return importlib.import_module("web_agent_site.engine.variant_price")
+
+
+_variant_price = _load_variant_price()
+VARIANT_PRICE_VERSION = _variant_price.VARIANT_PRICE_VERSION
+resolve_variant_price = _variant_price.resolve_variant_price
 
 PASS = "pass"
 FAIL = "fail"

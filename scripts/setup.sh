@@ -9,7 +9,7 @@ COMPRESSED_PRODUCTS="${SHOP_ENV_ROOT}/data/fine_items_eval_train_all.json.gz"
 PRODUCTS="${SHOP_ENV_ROOT}/data/items_eval_train.json"
 EXPECTED_PRODUCT_SHA256="57b10950a0064d16c81535a1d764a75879a508d250dde8a2a1787c5e6045559f"
 MAIN_PYTHON="${MAIN_PYTHON:-3.12}"
-SHOPSIM_PYTHON="${SHOPSIM_PYTHON:-3.10}"
+SHOPSIM_PYTHON="${SHOPSIM_PYTHON:-3.12}"
 
 if [[ ! -f "${COMPRESSED_PRODUCTS}" ]]; then
   echo "Missing embedded product archive: ${COMPRESSED_PRODUCTS}" >&2
@@ -53,7 +53,6 @@ cd "${SHOP_ENV_ROOT}"
 PYTHONPATH=. "${ENV_DIR}/bin/python" scripts/build_index.py
 
 cd "${ROOT}"
-"${ROOT}/.venv/bin/python" scripts/apply_verl_dynamic_sampling_patch.py
 
 echo "Shopping Agent training environment is ready."
 echo "Product SHA-256: ${actual_sha256}"

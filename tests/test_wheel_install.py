@@ -75,18 +75,6 @@ class WheelInstallTest(unittest.TestCase):
                     text=True,
                 )
 
-            smoke = subprocess.run(
-                [str(cli), "smoke", "--json"],
-                cwd=temporary,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(
-                len(json.loads(smoke.stdout)["checks"]),
-                5,
-            )
-
             trajectory = temporary / "non_blind_example.jsonl"
             trajectory.write_bytes(
                 (root / "examples/trajectories.jsonl").read_bytes()

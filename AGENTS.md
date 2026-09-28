@@ -27,8 +27,8 @@ alternatives never count as strict success in formal metrics.
 
 ## Data separation
 
-Training data must never overlap the V2 evaluation split. The legacy
-`data/evaluation/tasks.jsonl` (Final-200) is retired from V2; the 63 records
+Training data must never overlap the V2 evaluation split. The legacy Final-200
+benchmark is retired from V2 (kept in Git history only); the 63 records
 historically shared with the SFT corpus are migration-audit references only
 and must not enter any active evaluation. The V2 evaluation set is built from
 the frozen `tag=eval` split with strict deduplication by stable task id.

@@ -74,10 +74,6 @@ class PublicEntrypointTest(unittest.TestCase):
         self.assertEqual(environment["GRPO_MODEL_PATH"], str(model.resolve()))
         self.assertEqual(environment["GRPO_TRAIN_FILE"], str(train.resolve()))
         self.assertEqual(environment["GRPO_VAL_FILE"], str(validation.resolve()))
-        self.assertEqual(
-            environment["SHOPPING_GRPO_DIAGNOSTICS_PATH"],
-            str(output.resolve() / "training_diagnostics.jsonl"),
-        )
         self.assertIn("trainer.logger=[console]", command)
 
 

@@ -7,7 +7,7 @@ name = "shopping-grpo"
 version = "0.1.0"
 description = "ShopSimulator shopping-agent post-training and trajectory evaluation"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
   "tqdm>=4.66,<5",
 ]
@@ -16,7 +16,7 @@ dependencies = [
 eval = []
 sft = [
   "torch>=2.5",
-  "transformers @ git+https://github.com/huggingface/transformers.git@7ea2320c76117e6742364808a666ef6f2fb40a67",
+  "transformers>=5.5.3,<5.11,!=5.6.0",
   "peft>=0.15,<1",
   "accelerate>=1,<2",
   "torchvision",
@@ -28,12 +28,12 @@ sft-accelerated = [
   "liger-kernel>=0.6,<1",
 ]
 grpo = [
-  "verl==0.8.0",
-  "vllm==0.25.1",
+  "verl==0.9.1",
+  "vllm==0.25.0",
   "torch==2.11.0",
   "torchvision==0.26.0",
   "torchaudio==2.11.0",
-  "transformers @ git+https://github.com/huggingface/transformers.git@7ea2320c76117e6742364808a666ef6f2fb40a67",
+  "transformers>=5.5.3,<5.11,!=5.6.0",
   "ray[default]==2.56.1",
   "tensordict==0.10.0",
   "numpy==2.2.6",
@@ -60,11 +60,15 @@ override-dependencies = [
   "numpy==2.2.6",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "src"]
+
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 packages = ["shopping_grpo"]
 ignore_missing_imports = true

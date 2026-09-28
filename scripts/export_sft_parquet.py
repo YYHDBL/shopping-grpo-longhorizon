@@ -1,8 +1,14 @@
 # SFT 教材转 veRL 训练格式：samples.jsonl -> train.parquet
 # 列约定见 multiturn_dataset.py 头注：
-#   messages 用 arrow struct + map（无参数不补 None）；
+#   messages 用 arrow struct + map（无参数不补 None），逐消息保留 train 标记
+#   （守卫拒绝的 assistant 段 train=0，数据集据此置 loss mask=0）；
 #   tools 存完整 schema 的 JSON 字符串（保留 enum）；
-#   enable_thinking 恒为 False（全链路关思考）。
+#   enable_thinking 恒为 False（全链路关思考）；
+#   准入审计列（accept_reason/reward_type/reward_valid/over/termination_reason/
+#   jev_verdict/purchase）随行落盘，替代购买的准入依据可独立追溯。
+# 一律 fail fast，禁止静默转换：非法 JSON 参数、null/空字符串参数值、
+# token 统计缺失都立即报错退出（历史教训：把 None 静默转成空字符串产生了
+# view_features({"__dummy__": ""}) 一类参数语义污染）。
 # 超长按 token_stats.jsonl 的真实 token 数过滤（默认 16384，禁止截断）。
 # 验证与训练走同一条代码路径：ShoppingMultiTurnSFTDataset + veRL load_extern_object。
 import argparse
@@ -36,6 +42,7 @@ def arrow_schema():
         ("content", pa.string()),
         ("tool_calls", pa.list_(tool_call)),
         ("tool_call_id", pa.string()),
+        ("train", pa.int64()),
     ])
     return pa.schema([
         ("record_id", pa.string()),
@@ -46,7 +53,80 @@ def arrow_schema():
         ("messages", pa.list_(message)),
         ("tools", pa.string()),
         ("enable_thinking", pa.bool_()),
+        ("accept_reason", pa.string()),
+        ("reward_type", pa.string()),
+        ("reward_valid", pa.bool_()),
+        ("over", pa.bool_()),
+        ("termination_reason", pa.string()),
+        ("jev_verdict", pa.string()),
+        ("purchase", pa.string()),
     ])
+
+
+def parse_arguments(record_id, tool_call):
+    """解析并校验一条工具调用的参数；非法立即报错，绝不静默修复。"""
+    function = tool_call.get("function") or {}
+    name = function.get("name")
+    raw = function.get("arguments")
+    if not isinstance(raw, str):
+        raise ValueError(
+            f"{record_id}: {name} arguments must be a JSON string, "
+            f"got {type(raw).__name__}"
+        )
+    try:
+        arguments = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{record_id}: {name} arguments is not valid JSON: {raw!r}"
+        ) from exc
+    if not isinstance(arguments, dict):
+        raise ValueError(
+            f"{record_id}: {name} arguments must decode to an object, "
+            f"got {type(arguments).__name__}"
+        )
+    for key, value in arguments.items():
+        if value is None:
+            raise ValueError(f"{record_id}: {name} parameter {key!r} is null")
+        if isinstance(value, str) and not value:
+            raise ValueError(f"{record_id}: {name} parameter {key!r} is empty")
+    return name, arguments
+
+
+def slim_messages(sample):
+    record_id = sample["record_id"]
+    messages = []
+    for m in sample["messages"]:
+        role = m["role"]
+        if role == "assistant":
+            tool_calls = None
+            for call in m.get("tool_calls") or []:
+                name, arguments = parse_arguments(record_id, call)
+                call = dict(call)
+                call["function"] = {
+                    "name": name,
+                    "arguments": arguments,
+                }
+                (tool_calls := tool_calls or []).append(call)
+            messages.append({
+                "role": "assistant",
+                "content": m.get("content") or "",
+                "train": int(m.get("train", 1)),
+                **({"tool_calls": tool_calls} if tool_calls else {}),
+            })
+        elif role == "tool":
+            messages.append({
+                "role": "tool",
+                "tool_call_id": m.get("tool_call_id"),
+                "content": m.get("content") or "",
+                "train": int(m.get("train", 0)),
+            })
+        else:
+            messages.append({
+                "role": role,
+                "content": m.get("content") or "",
+                "train": int(m.get("train", 0)),
+            })
+    return messages
 
 
 def _fill(value, arrow_type):
@@ -55,7 +135,10 @@ def _fill(value, arrow_type):
         result = {}
         for k, v in (value or {}).items():
             if value_type == pa.string():
-                result[str(k)] = "" if v is None else str(v)
+                text = "" if v is None else str(v)
+                if not text:
+                    raise ValueError(f"empty map value for key {k!r}")
+                result[str(k)] = text
             else:
                 result[str(k)] = _fill(v, value_type)
         return result
@@ -69,40 +152,6 @@ def _fill(value, arrow_type):
         return [_fill(item, arrow_type.value_field.type)
                 for item in (value or [])]
     return value
-
-
-def slim_messages(sample):
-    messages = []
-    for m in sample["messages"]:
-        role = m["role"]
-        if role == "assistant":
-            tool_calls = None
-            for call in m.get("tool_calls") or []:
-                function = call.get("function") or {}
-                try:
-                    arguments = json.loads(function.get("arguments") or "{}")
-                except (TypeError, json.JSONDecodeError):
-                    arguments = {}
-                call = dict(call)
-                call["function"] = {
-                    "name": function.get("name"),
-                    "arguments": arguments,
-                }
-                (tool_calls := tool_calls or []).append(call)
-            messages.append({
-                "role": "assistant",
-                "content": m.get("content") or "",
-                **({"tool_calls": tool_calls} if tool_calls else {}),
-            })
-        elif role == "tool":
-            messages.append({
-                "role": "tool",
-                "tool_call_id": m.get("tool_call_id"),
-                "content": m.get("content") or "",
-            })
-        else:
-            messages.append({"role": role, "content": m.get("content") or ""})
-    return messages
 
 
 def main():
@@ -120,9 +169,14 @@ def main():
     samples = [json.loads(l) for l in (OUT / "samples.jsonl").open(encoding="utf-8")]
     tokens = {json.loads(l)["record_id"]: json.loads(l)["tokens"]
               for l in (OUT / "token_stats.jsonl").open(encoding="utf-8")}
+    missing = [s["record_id"] for s in samples if s["record_id"] not in tokens]
+    if missing:
+        raise SystemExit(
+            f"token 统计缺失 {len(missing)} 条（先运行 scripts/token_stats.py）："
+            + ", ".join(missing[:10])
+        )
     before = len(samples)
-    samples = [s for s in samples
-               if tokens.get(s["record_id"], 0) <= args.max_tokens]
+    samples = [s for s in samples if tokens[s["record_id"]] <= args.max_tokens]
     dropped = before - len(samples)
 
     tools_json = json.dumps(SHOP_TOOL_SCHEMAS, ensure_ascii=False)
@@ -133,10 +187,23 @@ def main():
             "teacher": s.get("teacher"),
             "difficulty": s["difficulty"],
             "persona_condition": s["persona_condition"],
-            "tokens": tokens.get(s["record_id"]),
+            "tokens": tokens[s["record_id"]],
             "messages": slim_messages(s),
             "tools": tools_json,
             "enable_thinking": False,
+            "accept_reason": s.get("accept_reason"),
+            "reward_type": s.get("reward_type"),
+            "reward_valid": s.get("reward_valid"),
+            "over": s.get("over"),
+            "termination_reason": s.get("termination_reason"),
+            "jev_verdict": (
+                json.dumps(s["jev_verdict"], ensure_ascii=False)
+                if s.get("jev_verdict") else None
+            ),
+            "purchase": (
+                json.dumps(s["purchase"], ensure_ascii=False)
+                if s.get("purchase") else None
+            ),
         })
     schema = arrow_schema()
     types = {f.name: f.type for f in schema}

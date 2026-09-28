@@ -4,25 +4,25 @@
 from __future__ import annotations
 
 import json
-import math
 import os
 import sys
-from importlib.metadata import PackageNotFoundError, distribution, version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 
 EXPECTED_VERSIONS = {
-    "verl": "0.8.0",
-    "vllm": "0.25.1",
+    "verl": "0.9.1",
+    "vllm": "0.25.0",
     "torch": "2.11.0",
-    "transformers": "5.15.0.dev0",
     "ray": "2.56.1",
     "tensordict": "0.10.0",
     "numpy": "2.2.6",
     "swanlab": "0.9.1",
 }
-EXPECTED_TRANSFORMERS_REVISION = "7ea2320c76117e6742364808a666ef6f2fb40a67"
-PATCH_MARKER = "SHOPPING_GRPO_DYNAMIC_SAMPLING_PATCH_V3"
+# transformers 与 verl 0.9.1 / vllm 0.25.0 的共同区间：>=5.5.3、!=5.6.0、<5.11。
+TRANSFORMERS_MIN = "5.5.3"
+TRANSFORMERS_EXCLUDED = "5.6.0"
+TRANSFORMERS_MAX = "5.11"
 MAX_SAFE_RESPONSE_LENGTH = 20480
 MAX_SAFE_SEQUENCE_LENGTH = 24576
 CURRENT_RUNTIME_FILES = {
@@ -140,142 +140,28 @@ def compose_runtime_config(overrides):
         return compose(config_name=config_name, overrides=list(overrides))
 
 
-def validate_transformers_revision():
-    """The Qwen3.5 runtime uses one pinned upstream Transformers revision."""
-    dist = distribution("transformers")
-    direct_url = Path(dist.locate_file("transformers-5.15.0.dev0.dist-info/direct_url.json"))
-    if not direct_url.is_file():
-        raise SystemExit(
-            "cannot verify pinned Transformers revision: direct_url.json is missing"
-        )
+def validate_transformers_range(installed):
+    """transformers 必须落在 verl 0.9.1 / vllm 0.25.0 的共同区间内。"""
+    from packaging.version import InvalidVersion, Version
+
+    installed_version = installed.setdefault(
+        "transformers", version("transformers")
+    ).split("+", 1)[0]
     try:
-        metadata = json.loads(direct_url.read_text(encoding="utf-8"))
-        revision = metadata["vcs_info"]["commit_id"]
-    except (OSError, KeyError, json.JSONDecodeError) as exc:
-        raise SystemExit(f"invalid Transformers direct_url.json: {exc}") from exc
-    if revision != EXPECTED_TRANSFORMERS_REVISION:
+        parsed = Version(installed_version)
+    except InvalidVersion as exc:
         raise SystemExit(
-            "incompatible Transformers revision: expected "
-            f"{EXPECTED_TRANSFORMERS_REVISION}, got {revision}"
-        )
-    print(f"pinned Transformers revision preflight passed: {revision}")
-
-
-def validate_dynamic_sampling(config, verl_source: Path, installed):
-    dynamic_config = config.get("shopping_dynamic_sampling", {})
-    if not bool(dynamic_config.get("enable", False)):
-        return
-
-    if installed.get("verl") != "0.8.0":
+            f"cannot parse installed transformers version: {installed_version!r}"
+        ) from exc
+    if (
+        parsed < Version(TRANSFORMERS_MIN)
+        or parsed >= Version(TRANSFORMERS_MAX)
+        or installed_version == TRANSFORMERS_EXCLUDED
+    ):
         raise SystemExit(
-            f"shopping dynamic sampling requires verl==0.8.0, got {installed.get('verl')}"
-        )
-    ray_trainer = verl_source.parent / "trainer" / "ppo" / "ray_trainer.py"
-    if not ray_trainer.is_file():
-        raise SystemExit(f"cannot locate installed RayPPOTrainer source: {ray_trainer}")
-    if PATCH_MARKER not in ray_trainer.read_text(encoding="utf-8"):
-        raise SystemExit(
-            "shopping dynamic sampling is enabled but the pinned veRL patch marker is missing; "
-            "run scripts/apply_verl_dynamic_sampling_patch.py first"
-        )
-
-    try:
-        from shopping_grpo.training.grpo.dynamic_sampling import (
-            extract_shopping_group_signals,
-            select_reward_varying_groups,
-        )
-    except ImportError as exc:
-        raise SystemExit(f"shopping dynamic sampling helper is unavailable: {exc}") from exc
-    utility, success, invalid, reasons = extract_shopping_group_signals(
-        [
-            {
-                "infrastructure_invalid": False,
-                "reward": {
-                    "terminal_utility": reward,
-                    "purchase_success": reward > 0,
-                    "sampling_invalid": False,
-                },
-            }
-            for reward in (0.0, 1.0, 0.0, 0.0)
-        ]
-    )
-    indices, _ = select_reward_varying_groups(
-        ["preflight"] * 4,
-        [0.0, 1.0, 0.0, 0.0],
-        terminal_utilities=utility,
-        purchase_success=success,
-        sampling_invalid=invalid,
-        sampling_invalid_reasons=reasons,
-    )
-    if indices != [0, 1, 2, 3]:
-        raise SystemExit("shopping dynamic sampling helper failed its import-time sanity check")
-
-    if dynamic_config.get("metric") != "seq_reward":
-        raise SystemExit("shopping_dynamic_sampling.metric must be seq_reward")
-    if int(dynamic_config.get("max_num_gen_batches", 0)) <= 0:
-        raise SystemExit("shopping_dynamic_sampling.max_num_gen_batches must be positive")
-    if int(dynamic_config.get("max_consecutive_skipped_updates", 0)) <= 0:
-        raise SystemExit(
-            "shopping_dynamic_sampling.max_consecutive_skipped_updates must be positive"
-        )
-    reward_tolerance = float(dynamic_config.get("reward_tolerance", -1))
-    if reward_tolerance < 0 or not math.isfinite(reward_tolerance):
-        raise SystemExit("shopping_dynamic_sampling.reward_tolerance must be finite and non-negative")
-    if not bool(config.algorithm.rollout_correction.get("bypass_mode", False)):
-        raise SystemExit("shopping dynamic sampling requires rollout_correction.bypass_mode=true")
-    if not bool(config.actor_rollout_ref.rollout.get("calculate_log_probs", False)):
-        raise SystemExit("shopping dynamic sampling requires rollout.calculate_log_probs=true")
-
-    print(
-        "shopping dynamic sampling preflight passed: "
-        + json.dumps(
-            {
-                "enable": True,
-                "metric": str(dynamic_config.metric),
-                "max_num_gen_batches": int(dynamic_config.max_num_gen_batches),
-                "max_consecutive_skipped_updates": int(
-                    dynamic_config.max_consecutive_skipped_updates
-                ),
-                "reward_tolerance": reward_tolerance,
-                "ray_trainer": str(ray_trainer),
-                "marker": PATCH_MARKER,
-            },
-            sort_keys=True,
-        )
-    )
-
-
-def validate_trace(config):
-    """Fail before model loading when the optional TRACE arm is inconsistent."""
-    trace = config.get("shopping_trace", {})
-    if not bool(trace.get("enable", False)):
-        return
-    if str(config["algorithm"]["adv_estimator"]).lower() != "grpo":
-        raise SystemExit("shopping TRACE only supports GRPO")
-    model = config["actor_rollout_ref"]["model"]
-    lora_rank = int(model.get("lora", {}).get("rank", 0) or model.get("lora_rank", 0))
-    if lora_rank <= 0:
-        raise SystemExit("shopping TRACE requires LoRA to expose a frozen base reference")
-    if int(config["trainer"]["n_gpus_per_node"]) != 1 or int(config["trainer"]["nnodes"]) != 1:
-        raise SystemExit("shopping TRACE currently supports the repository's single-GPU recipe")
-    values = {
-        "epsilon": float(trace.get("epsilon", 0)),
-        "discount": float(trace.get("discount", -1)),
-        "terminal_weight": float(trace.get("terminal_weight", -1)),
-        "outcome_weight": float(trace.get("outcome_weight", -1)),
-        "turn_weight": float(trace.get("turn_weight", -1)),
-    }
-    if not all(math.isfinite(value) for value in values.values()):
-        raise SystemExit("shopping TRACE hyperparameters must be finite")
-    if values["epsilon"] <= 0 or int(trace.get("horizon", 0)) <= 0:
-        raise SystemExit("shopping TRACE epsilon and horizon must be positive")
-    if not 0 <= values["discount"] <= 1:
-        raise SystemExit("shopping TRACE discount must be in [0, 1]")
-    if min(values["terminal_weight"], values["outcome_weight"], values["turn_weight"]) < 0:
-        raise SystemExit("shopping TRACE weights must be non-negative")
-    if int(trace.get("max_sequence_length", 0)) != MAX_SAFE_SEQUENCE_LENGTH:
-        raise SystemExit(
-            f"shopping TRACE max_sequence_length must equal {MAX_SAFE_SEQUENCE_LENGTH}"
+            "incompatible GRPO dependency: transformers must satisfy "
+            f">={TRANSFORMERS_MIN},!={TRANSFORMERS_EXCLUDED},<{TRANSFORMERS_MAX}, "
+            f"got {installed_version}"
         )
 
 
@@ -422,7 +308,6 @@ def main():
     if missing:
         raise SystemExit("missing GRPO parquet file(s): " + ", ".join(missing))
     validate_training_memory_budget(config)
-    validate_trace(config)
 
     if sys.version_info[:2] != (3, 12):
         raise SystemExit(f"incompatible Python: expected 3.12, got {sys.version.split()[0]}")
@@ -437,7 +322,7 @@ def main():
             raise SystemExit(
                 f"incompatible GRPO dependency: expected {package}=={expected}, got {installed[package]}"
             )
-    validate_transformers_revision()
+    validate_transformers_range(installed)
 
     try:
         import torch
@@ -451,7 +336,7 @@ def main():
         from verl.utils.tracking import Tracking
     except ImportError as exc:
         raise SystemExit(
-            "incompatible veRL 0.8 install: required AgentLoop/Tool APIs are unavailable; "
+            "incompatible veRL 0.9.1 install: required AgentLoop/Tool APIs are unavailable; "
             f"original error: {exc}"
         ) from exc
 
@@ -466,12 +351,12 @@ def main():
     ):
         raise SystemExit("incompatible veRL ToolAgentLoop lifecycle API")
     if "qwen3_coder" not in ToolParser._registry:
-        raise SystemExit("veRL 0.8 built-in qwen3_coder parser is unavailable")
+        raise SystemExit("veRL 0.9.1 built-in qwen3_coder parser is unavailable")
     if "swanlab" not in Tracking.supported_backend:
-        raise SystemExit("veRL 0.8 SwanLab tracking backend is unavailable")
-    validate_dynamic_sampling(config, verl_source, installed)
+        raise SystemExit("veRL 0.9.1 SwanLab tracking backend is unavailable")
     validate_swanlab_tracking(config)
     install_torch_padding_fallback()
+    installed["transformers"] = version("transformers")
     print(
         "GRPO runtime preflight passed: "
         + ", ".join(f"{name}={value}" for name, value in installed.items())
