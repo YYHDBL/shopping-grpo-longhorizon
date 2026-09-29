@@ -12,7 +12,6 @@ from shopping_grpo.training.grpo.adapter.agent_loop import ShoppingToolAgentLoop
 from shopping_grpo.training.grpo.adapter.runtime import (
     current_environment,
     current_runtime_state,
-    length_penalty_for_turns,
     make_runtime_state,
     reward_breakdown,
     task_id_from_kwargs,
@@ -554,7 +553,7 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
 
 
 class RewardV31Test(unittest.TestCase):
-    """v3.1：截断档 -0.5 + 连续轮次惩罚（soft=12 / max=35 / λ=0.10）。"""
+    """v3.1：截断档 -0.5；连续长度惩罚不设（用户裁决 2026-09-29）。"""
 
     def _truncated_state(self) -> dict:
         state = make_runtime_state(task_id=9, max_steps=35)
@@ -593,18 +592,18 @@ class RewardV31Test(unittest.TestCase):
         self.assertFalse(reward_breakdown(state)["truncated"])
         self.assertEqual(reward_breakdown(state)["total"], 1.0)
 
-    def test_length_penalty_boundaries(self):
-        self.assertEqual(length_penalty_for_turns(0), 0.0)
-        self.assertEqual(length_penalty_for_turns(12), 0.0)
-        self.assertAlmostEqual(length_penalty_for_turns(24), 0.10 * 12 / 23)
-        self.assertEqual(length_penalty_for_turns(35), 0.10)
-        self.assertEqual(length_penalty_for_turns(99), 0.10)
-
-    def test_penalty_cap_cannot_flip_outcome_ordering(self):
-        # 最小结果档差 0.20（礼貌停 -0.15 vs 早退 -0.35），惩罚上限 0.10
-        # 必须不超过档差的一半，不同结果的排序才不可能被翻转
-        self.assertLessEqual(length_penalty_for_turns(35), 0.10 + 1e-9)
-        self.assertLess(2 * length_penalty_for_turns(99), 0.20 + 1e-9)
+    def test_long_but_normal_terminal_has_no_length_penalty(self):
+        # 连续长度惩罚不设：35 步正常终局（gold）拿满分，不被步数扣分
+        state = make_runtime_state(task_id=9, max_steps=35)
+        state["done"] = True
+        state["terminal_result"] = {"done": True, "over": True}
+        state["final_reward"] = 1.0
+        state["reward_valid"] = True
+        state["reward_version"] = "shopsimulator-reward-v3"
+        state["reward_type"] = "gold_purchase"
+        state["reward_detail"] = {"hard_gates": {}, "dimension_scores": {}}
+        state["steps"] = [{"tool": "search_products", "parameters": {}}] * 35
+        self.assertEqual(reward_breakdown(state)["total"], 1.0)
 
 
 if __name__ == "__main__":  # pragma: no cover

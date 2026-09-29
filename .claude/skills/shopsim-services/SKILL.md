@@ -30,7 +30,7 @@ docker exec -it shopping-gpu bash
 ```
 
 容器内栈：verl 0.9.1 + vllm 0.25.0 + torch 2.11+cu130 + transformers 5.10.4（Python 3.12，已装好，别重装）。
-**坑**：容器内 GPU 是容器本地编号 0-3，但 NVIDIA_VISIBLE_DEVICES=all 时用 UUID 选卡（launch 脚本里有现成的 4-7 UUID 列表）。
+**坑**：当前容器 NVIDIA_VISIBLE_DEVICES=all，能看到全部 8 张物理卡（容器内 nvidia-smi 的 0-7 就是物理 0-7，别误把 0-3 的占用当成自己的）。选卡一律用 UUID（launch 脚本里有现成的物理 4-7 UUID 列表）；容器内 nvidia-smi 显示的 PID 是宿主机 PID，容器 /proc 里查不到属正常。
 **坑**：宿主机 `.venv` 不认 Qwen3.5，数据处理用 `.venv/bin/python`，训练/推理一律容器内。
 
 ## 3. ShopSimulator 环境服务（pack_api）

@@ -218,22 +218,9 @@ def _normal_terminal(state: dict) -> bool:
 # - 截断档：预算耗尽未终局（token 上限或 35 步上限，error 固定为
 #   assistant_finished_without_environment_done）→ -0.5，低于早退(-0.35)、
 #   高于买错(-0.85)，堵住"拖满预算 0 分 > 礼貌收尾 -0.15"的漏洞
-# - 连续轮次惩罚：环境步数 soft=12 起线性、35 步（session 上限）拉满，
-#   λ=0.10；上限是最小结果档差(0.20)的一半，结果档排序不可能被翻转
+# - 连续长度惩罚：不设（用户裁决 2026-09-29）——目标是预算内完成任务，
+#   长轨迹可能包含必要的搜索/比较/规格确认，仅凭步数无法判断哪些是浪费
 TRUNCATION_REWARD = -0.5
-LENGTH_PENALTY_SOFT_TURNS = 12.0
-LENGTH_PENALTY_MAX_TURNS = 35.0
-LENGTH_PENALTY_LAMBDA = 0.10
-
-
-def length_penalty_for_turns(turns: int) -> float:
-    """正常终局轨迹的连续轮次惩罚（v3.1）：[soft, max] 线性 0→λ，区间外截断。"""
-    if turns <= LENGTH_PENALTY_SOFT_TURNS:
-        return 0.0
-    ratio = (turns - LENGTH_PENALTY_SOFT_TURNS) / (
-        LENGTH_PENALTY_MAX_TURNS - LENGTH_PENALTY_SOFT_TURNS
-    )
-    return LENGTH_PENALTY_LAMBDA * min(ratio, 1.0)
 
 
 def reward_breakdown(state: dict) -> dict[str, float | bool]:
