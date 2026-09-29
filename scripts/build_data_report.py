@@ -56,6 +56,14 @@ def train_set():
 def baseline():
     return json.load((WT / "outputs/evaluation/baseline/summary.json").open(encoding="utf-8"))
 
+def jev_summaries():
+    out = {}
+    for name in ("baseline", "sft-v2-run1"):
+        p = WT / f"outputs/evaluation/{name}/jev_summary.json"
+        if p.exists():
+            out[name] = json.load(p.open(encoding="utf-8"))
+    return out
+
 def hist(values, bin_edges):
     counts = [0] * (len(bin_edges) - 1)
     for v in values:
@@ -73,6 +81,7 @@ S = splits()
 C = collection()
 DF, TURNS, TOOLS, TOKENS = train_set()
 B = baseline()
+J = jev_summaries()
 
 total_records = 23421
 accepted = V.get("accepted", 0)
@@ -238,17 +247,18 @@ html = """<!DOCTYPE html>
 <p class="secnote">冻结评测集 1,092 条可评分任务，Reward v3 严格口径（完整 gold_purchase 且 reward_valid=true）。三档对照的第一档。</p>
 <div class="kpis">
 {kpi("39.2%", "严格成功率（428/1092）", hero=True)}
-{kpi("62.3%", "含部分满足购买率")}
+{kpi(f"{J['baseline']['completion_rate']:.1%}", "真实完成率（含 Jev 救回）", hero=True)}
 {kpi("10.1%", "死循环率")}
-{kpi("0.3%", "合格替代品命中率")}
+{kpi("134", "Jev 判定完全满足的替代品")}
 </div>
 {figure(8, "严格成功率 · 按难度", "f8", "easy / medium / hard 三档；难度梯度清晰。")}
 {figure(9, "严格成功率 · 按画像条件", "f9", "无关画像组反超相关画像组约 5 个百分点——样本量下可能是噪声，SFT 后复现与否是观测点。")}
 {figure(10, "终止状态构成（1,092 条）", "f10", "零样本下模型几乎不会寻找等价替代品（0.3%）；近两成耗在死循环与异常终止。", tall=True)}
 
-<h2>6　三档对照</h2>
-<p class="secnote">同一冻结评测集、同一 Reward 口径；SFT 训练进行中（batch 64 · 172 步 · 4×A800 FSDP）。</p>
-{figure(11, "严格成功率对照", "f11", "Base 为已完成实测；SFT-only 与 SFT+GRPO 为占位，训练完成后更新。")}
+<h2>6　三档对照与 Jev 灰区评分</h2>
+<p class="secnote">SFT 已完成（batch 64 · 172 步 · 4×A800 FSDP，val loss 0.292→0.278 单调下降）。灰区判定：非 Gold 购买经 Jev 语义判断，完全满足需求的替代品计为完成——环境文本匹配会低估替代品质量。</p>
+{figure(11, "严格成功率 vs 真实完成率对照", "f11", "严格口径只认 Gold；真实完成率 = 严格 + Jev 判 fully_satisfies 的替代品（分母为可评分任务）。SFT+GRPO 为占位。")}
+{figure(12, "SFT 灰区判定明细（238 条非 Gold 购买）", "f12", "96 条被 Jev 判定完全满足（占灰区 40%）——按 V1 Reward v3 这些只能拿 0.55 折扣分。")}
 
 <footer>
 口径说明 · 判定与计数来自管线真实输出文件（final_verdicts / tasks_final / task_status / train.parquet / baseline summary），
@@ -332,12 +342,29 @@ yAxis:Object.assign({{type:'value',max:100,axisLabel:{{formatter:'{{value}}%',co
 series:[{{type:'bar',barWidth:44,itemStyle:{{color:(p)=>p.dataIndex===0?S1:GRID,borderRadius:[4,4,0,0]}},
 label:{{show:true,position:'top',formatter:(p)=>p.dataIndex===0?'39.2%':'待训练',color:INK2}},data:[39.2,null,null]}}]}});
 
+const strictRates=[39.2,60.7,null];
+const realRates=[@@B_REAL@@,@@S_REAL@@,null];
+base('f11',{legend:{textStyle:{color:INK2},bottom:0},grid:{left:8,right:30,top:36,bottom:44,containLabel:true},
+xAxis:Object.assign({type:'category',data:['Base 零样本','SFT-only','SFT+GRPO']},axisStyle),
+yAxis:Object.assign({type:'value',max:100,axisLabel:{formatter:'{value}%',color:MUTED}},axisStyle),
+series:[
+{name:'严格成功率（Gold）',type:'bar',barWidth:28,itemStyle:{color:S1,borderRadius:[4,4,0,0]},label:{show:true,position:'top',formatter:(p)=>p.value==null?'待训':p.value+'%',color:INK2},data:strictRates},
+{name:'真实完成率（+Jev 替代品）',type:'bar',barWidth:28,itemStyle:{color:S3,borderRadius:[4,4,0,0]},label:{show:true,position:'top',formatter:(p)=>p.value==null?'待训':p.value+'%',color:INK2},data:realRates}]});
+
+base('f12',{grid:{left:8,right:70,top:20,bottom:8,containLabel:true},xAxis:Object.assign({type:'value'},axisStyle),
+yAxis:Object.assign({type:'category',data:['证据不足','不满足','部分满足','完全满足']},axisStyle),
+series:[{type:'bar',barWidth:24,itemStyle:{color:S3,borderRadius:[0,4,4,0]},label:{show:true,position:'right',color:INK2},data:[2,26,114,96]}]});
+
 document.querySelectorAll('.pending').forEach(e=>e.style.color=MUTED);
 </script>
 </body>
 </html>"""
 
 html = html.replace('{{', '{').replace('}}', '}')
+html = html.replace('@@B_REAL@@', str(round(J['baseline']['completion_rate']*100,1)))
+html = html.replace('@@S_REAL@@', str(round(J['sft-v2-run1']['completion_rate']*100,1)))
+html = html.replace('@@B_REAL@@', str(round(J['baseline']['completion_rate']*100,1)))
+html = html.replace('@@S_REAL@@', str(round(J['sft-v2-run1']['completion_rate']*100,1)))
 for _k, _v in _r().items():
     html = html.replace(_k, _v)
 # 兜底：残留的 json.dumps(...) 占位（写法空格差异导致字典键未命中）直接求值替换
