@@ -234,6 +234,68 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
             return AgentState.TERMINATED
         return next_state
 
+    _jev_client = None
+    _jev_cache: dict = {}
+
+    def _jev_grey_zone(self, state):
+        """灰区购买（valid/partial alternative）经 Jev 判定是否完全满足需求。
+
+        返回 verdict dict 或 None（非灰区 / 基础设施无效）。判定按
+        (instruction, asin, options, price) 缓存，训练内同一组合只判一次。
+        """
+        import threading as _th
+        if state.get("infrastructure_invalid") or not state.get("done"):
+            return None
+        reward_type = state.get("reward_type")
+        if reward_type not in {
+            "valid_alternative_purchase", "partial_alternative_purchase",
+        }:
+            return None
+        purchase = (state.get("terminal_result") or {}).get("purchase") or {}
+        if not purchase:
+            return None
+        key = (
+            str(purchase.get("instruction_text") or ""),
+            str(purchase.get("asin") or purchase.get("name") or ""),
+            json.dumps(purchase.get("options") or {}, sort_keys=True),
+            str(purchase.get("price")),
+        )
+        with _th.Lock():
+            if key in self._jev_cache:
+                return self._jev_cache[key]
+        if self._jev_client is None:
+            from shopping_grpo.acceptance.jev_client import JevDecisionsClient
+            from pathlib import Path as _P
+            env = {}
+            envp = _P("/data/jyh-yyh/shopping-grpo-longhorizon/.env")
+            if envp.exists():
+                for line in envp.read_text().splitlines():
+                    if "=" in line and not line.startswith("#"):
+                        k, _, v = line.partition("=")
+                        env.setdefault(k.strip(), v.strip())
+            import os as _os
+            api_key = _os.environ.get("OPENROUTER_API_KEY") or env.get(
+                "OPENROUTER_API_KEY")
+            self._jev_client = JevDecisionsClient(api_key=api_key)
+        state_text = (
+            f"用户需求：{purchase.get('instruction_text')}\n"
+            f"候选商品：{purchase.get('name')}，"
+            f"价格 {purchase.get('price')} 元，"
+            f"所选规格 {purchase.get('options')}，"
+        )
+        attrs = purchase.get("attributes") or []
+        if attrs:
+            state_text += f"关键属性 {'、'.join(str(a) for a in attrs)}，"
+        try:
+            verdict = self._jev_client.decide_satisfaction(state_text)
+            verdict = {"choice": verdict["choice"]}
+        except Exception:
+            # Jev 不可达时保持环境原值（灰区替代品维持 v3 分数），不阻塞训练。
+            verdict = {"choice": "unavailable"}
+        with _th.Lock():
+            self._jev_cache[key] = verdict
+        return verdict
+
     async def run(self, sampling_params, **kwargs):
         """启动 session、运行父类 AgentLoop，并在 finally 中释放环境租约。"""
         task_id = task_id_from_kwargs(kwargs)
@@ -258,6 +320,15 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
                 if self.reward_mode == "constraint_aware"
                 else terminal_reward(state, mode=self.reward_mode)
             )
+            # V2 灰区判定：非 Gold 且硬门通过的购买，经 Jev 语义判断，
+            # fully_satisfies 给满分 1.0（与 Gold 同权）；判定不可验证保持原值。
+            jev_verdict = self._jev_grey_zone(state)
+            if jev_verdict is not None:
+                output.extra_fields.setdefault("shopping", {})["jev_choice"] = (
+                    jev_verdict.get("choice")
+                )
+                if jev_verdict.get("choice") == "fully_satisfies":
+                    output.reward_score = 1.0
             output.extra_fields["shopping"] = {
                 "task_id": task_id,
                 "steps": len(state["steps"]),

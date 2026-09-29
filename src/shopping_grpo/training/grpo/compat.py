@@ -1,8 +1,11 @@
-"""veRL 的窄范围运行时兼容。"""
+import os
 
 
 def install_torch_padding_fallback():
     """安装项目所需的 veRL 窄范围 runtime hooks。"""
+    # Ray 分配 GPU 前执行此 hook；设备可用性查询必须避免初始化 CUDA。
+    os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "1"
+
     from verl.utils import attention_utils
     from verl.utils import npu_flash_attn_utils as fallback
 

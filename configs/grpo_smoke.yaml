@@ -1,0 +1,115 @@
+# V2 GRPO smoke 配置：colocate 4 卡、全参、n=8、24k 序列
+# 小批量验证：64 题 × 2 步 × group 8，验证 rollout→灰区 Jev→训练完整环
+hydra:
+  searchpath:
+    - pkg://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  train_files: ${oc.env:GRPO_TRAIN_FILE}
+  val_files: ${oc.env:GRPO_VAL_FILE,${oc.env:GRPO_TRAIN_FILE}}
+  train_batch_size: 8          # 每步 8 题
+  max_prompt_length: 4096
+  max_response_length: 20480   # 轨迹生成上限（合计约 24k）
+  return_raw_chat: true
+  filter_overlong_prompts: true
+  truncation: error
+  num_workers: 0
+
+actor_rollout_ref:
+  hybrid_engine: true          # colocate：训练与 rollout 共用 4 卡
+  model:
+    path: ${oc.env:GRPO_MODEL_PATH}
+    trust_remote_code: true
+    enable_gradient_checkpointing: true
+    use_remove_padding: true
+    override_config:
+      attn_implementation: sdpa
+  actor:
+    ppo_mini_batch_size: 16
+    ppo_micro_batch_size_per_gpu: 1
+    ppo_max_token_len_per_gpu: 24576
+    use_dynamic_bsz: true
+    loss_agg_mode: token-mean
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.2
+    entropy_coeff: 0.0
+    calculate_entropy: true
+    use_kl_loss: false
+    optim:
+      lr: 1.0e-6
+      lr_warmup_steps_ratio: 0.1
+    fsdp_config:
+      optimizer_offload: false
+      param_offload: false
+  rollout:
+    name: vllm
+    mode: async
+    n: 8                       # group size：每题采 8 条
+    temperature: 1.0
+    top_p: 0.95
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.45  # colocate：rollout 与训练分时复用，各留一半
+    max_num_seqs: 32
+    max_model_len: 24576
+    max_num_batched_tokens: 24576
+    free_cache_engine: true
+    calculate_log_probs: true
+    log_prob_micro_batch_size_per_gpu: 1
+    log_prob_max_token_len_per_gpu: 24576
+    agent:
+      num_workers: 8
+      default_agent_loop: shopping_tool_agent
+      agent_loop_config_path: ${oc.env:SHOPPING_GRPO_ROOT}/configs/agent_loop.yaml
+    multi_turn:
+      enable: true
+      format: qwen3_coder
+      max_user_turns: 40
+      max_assistant_turns: 40
+      max_parallel_calls: 1
+      max_tool_response_length: 16384
+      tool_response_truncate_side: middle
+      tool_config_path: ${oc.env:SHOPPING_GRPO_ROOT}/configs/tools.json
+      tokenization_sanity_check_mode: ignore_strippable
+    val_kwargs:
+      n: 1
+      temperature: 0.0
+      do_sample: false
+  ref:
+    log_prob_micro_batch_size_per_gpu: 1
+    log_prob_max_token_len_per_gpu: 24576
+    fsdp_config:
+      param_offload: true
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+  norm_adv_by_std_in_grpo: false
+  disable_kl: true
+  loss_type: ppo_clip
+
+reward_model:
+  enable: false
+
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      worker_process_setup_hook: shopping_grpo.training.grpo.compat.install_torch_padding_fallback
+
+trainer:
+  total_epochs: 1
+  total_training_steps: 5      # smoke：只跑 2 步
+  save_freq: 100
+  test_freq: -1
+  val_before_train: false
+  logger: [console, swanlab]
+  project_name: shopping-grpo-smoke
+  swanlab_mode: local
+  project_name: shopping-grpo-smoke
+  experiment_name: v2-smoke
+  default_local_dir: ${oc.env:GRPO_OUTPUT_DIR}
+  n_gpus_per_node: 4
+  nnodes: 1

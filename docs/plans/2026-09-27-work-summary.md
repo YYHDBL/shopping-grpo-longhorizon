@@ -112,3 +112,44 @@ tool_choice=required（删纯文本出口）、删 think 工具、子页单次�
 7. 容器内 `CUDA_VISIBLE_DEVICES` 用容器本地编号（透传后重编号），不是宿主机编号；
 8. verl 大版本间配置结构会变（0.8→0.9 的 model/engine/optim 从平铺变分组），升级后必须 hydra dry-run 重新核对字段；
 9. 三档对照的第一档（原模型零样本基线）必须在 SFT 前跑掉，否则提升幅度无从对比——本次差点跳过，用户拦住了。
+
+---
+
+# 追记：2026-09-29，GRPO smoke 验证完成
+
+## 十、GRPO smoke 全链路验证
+
+外援修复（`PYTORCH_NVML_BASED_CUDA_CHECK=1`，兼容 hook 中的 CUDA 过早初始化导致 Ray worker GPU 映射缓存错误）后，GRPO 多卡 FSDP 训练在 Docker 容器内全链路跑通：Ray 集群 → FSDP 4 卡 → vLLM colocate → Agent rollout（环境交互 + 工具调用）→ Reward（含 Jev 灰区判定）→ GRPO 梯度更新 → SwanLab 指标记录。连续 3 步正常，指标健康（reward 0.767、entropy 0.38、clip_ratio 0、489s/步）。
+
+## 十一、GRPO 正式跑配置（已验证的安全值）
+
+| 参数 | 值 | 备注 |
+|---|---|---|
+| colocate 4 卡 | hybrid_engine=true | 训练与 rollout 分时复用 |
+| group size | 8 | 每题采 8 条做组内比较 |
+| train_batch_size | 8 题/步 | ×8 采样 = 64 条轨迹/步 |
+| vLLM gpu_mem_util | 0.35 | 0.5 会 OOM (wake)；0.45 可试 |
+| ppo_mini_batch | 8 | 16 会 OOM (log_softmax) |
+| ppo_micro_batch | 1/GPU（正式跑可试 2）| |
+| ppo_max_token_len | 24576 | 16384 会截断合法序列（18k+）|
+| optimizer_offload | true | 正式跑必开，解决跨步显存累积 |
+| RL 数据量 | 1000 题 | 对齐 V1，约 125 步 ~17h |
+| 环境 slots | 80 | 64 rollout 并发零错误 |
+
+## 十二、GRPO 算法配置确认（无花活）
+
+- KL loss: off / KL in reward: off / KL ref model: disable（连参考模型都不加载）
+- Entropy bonus: 0（纯记录，不影响 loss）
+- Loss: ppo_clip / Advantage: grpo / Advantage std 归一化: off
+- 唯一正则化是 PPO clip 0.2
+
+## 十三、关键指标监控清单
+
+reward/mean（应升）、reward/std（应降）、actor/entropy（缓慢降，勿塌到 0）、
+actor/pg_loss、actor/grad_norm、actor/clip_ratio（<10%）、response_length/mean、
+success_rate（gold）
+
+## 十四、权重清理
+
+- 删除：GRPO smoke checkpoint（106G）+ SFT 中间步 100/150（~105G）
+- 保留：SFT 最终 step_172（53G，正式评测用）+ sft-merged（18G，GRPO 起点）+ Qwen3.5-9B 原始（19G）
