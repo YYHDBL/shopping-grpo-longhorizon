@@ -153,3 +153,70 @@ success_rate（gold）
 
 - 删除：GRPO smoke checkpoint（106G）+ SFT 中间步 100/150（~105G）
 - 保留：SFT 最终 step_172（53G，正式评测用）+ sft-merged（18G，GRPO 起点）+ Qwen3.5-9B 原始（19G）
+
+---
+
+# 追记：2026-09-29 下午，run1 三版排障到分块输出头定稿
+
+## 十五、正式跑三次 OOM/重启全程
+
+| 版本 | 配置 | 结果 |
+|---|---|---|
+| v1 | optimizer_offload=true，gpu_mem 0.35 | step1 过（峰值 60.9G），**step2 死于 log_softmax 的 logits 峰值** |
+| v2 | +param_offload=true，gpu_mem 0.30 | step1 峰值 56.8G；用户暂停对齐，未验证 step2 |
+| v3 | **+分块输出头（外援方案）** | step1 峰值 **43.8G**，update_actor 反而快 77s，步时 446s（全程约 15.5h） |
+
+崩溃点：`update_actor → forward_step → logprobs_from_logits_v2 → F.log_softmax`，
+GRPO 训练前向物化 [seq, vocab] logits（22k × 15 万词表 bf16 ≈ 6.7G/张量）+ log_softmax
+中间结果 + 反向，把 80G 卡顶穿。reserved-unallocated 仅 283MB，非碎片化。
+
+## 十六、外援方案（已逐条对源码核实后采纳）
+
+```yaml
+actor_rollout_ref:
+  model:
+    use_fused_kernels: true
+    fused_kernel_options:
+      impl_backend: torch
+    enable_activation_offload: true
+```
+
+原理：veRL 0.9.1 `FusedLinearForPPO`（utils/experimental/torch_functional.py）以
+512 token/块直接用 hidden_states × lm_head.weight 算 log_probs+entropy，反向逐块
+重算，**从不物化 [seq,vocab] logits**。Qwen3.5 分发在 monkey_patch.py:270。生效
+标志：初始化日志 `Using Torch backend for fused kernels in Qwen3_5ForConditionalGeneration`。
+
+## 十七、本轮经验（按教训价值排序）
+
+1. **方案排除要说"我没找到"，不要说"不存在"**：我断言压峰值只有"减序列/offload/
+   砍上限"三条路，漏查了 `use_fused_kernels`（藏在 experimental 目录）。外援直接
+   给出第四条。自包含问题总结（环境/栈/崩溃栈/已排除项）请外援的模式再次证明有效。
+2. **改配置前先翻旧版本**：V1 的 GRPO 配置里 param_offload 早就是 true，我照抄了
+   smoke 验证配置（false，3 步短轨迹没暴露）。
+3. **liger FLCE 为什么救不了 RL**：RL 需要逐 token log_prob 算新旧策略比值，必须
+   物化 logits；FLCE 只吐标量 loss，veRL 源码写死 `fused_linear_cross_entropy=False`
+   关掉它。SFT 只需总 loss 所以能用（V1 的 liger 开关在 SFT 管线）。正解是分块输出
+   头——**分块必须发生在 lm_head 之前且反向重算**，只对已物化 logits 分块调
+   log_softmax 没有用。
+4. **动态 bsz 语义**：use_dynamic_bsz=true 时 microbatch 按 token 预算（24576）打包，
+   micro_batch_size_per_gpu=1 不保证单条轨迹。预算已等于最长单条序列需求，降预算
+   降不了单条 22k 轨迹本身的计算量。
+5. **截断奖励的坑**：截断轨迹（error=assistant_finished_without_environment_done）
+   的 reward_version 还是 None（环境没来得及报终局），reward 分支要在 v3/兜底分支
+   之前统一拦截，否则改了 v3 分支也不触发。
+6. **容器内 nvidia-smi 的 PID 是宿主机 PID**，容器 /proc 查不到属正常；容器
+   NVIDIA_VISIBLE_DEVICES=all 时看到的 0-7 就是物理 0-7，别把自己的卡位认错。
+7. **colocate 不是"一张卡同时跑两套"**：是分时独占，gpu_memory_utilization 调的是
+   vLLM 显存配额（不是计算利用率），压它牺牲 rollout 并发换 wake 阶段不挤兑。
+
+## 十八、reward v3.1 定稿（含一次否决）
+
+- 截断（token/步数预算耗尽未终局）：0 → **-0.5**，堵"拖满预算 0 分 > 礼貌收尾
+  -0.15"的漏洞；基础设施无效仍 0.0（不制造学习信号）
+- 连续长度惩罚：实现后**被否决撤销**（用户裁决：目标是预算内完成任务，长轨迹可能
+  包含必要的搜索/比较/规格确认，仅凭步数无法判断哪些是浪费）。turns 留在
+  extra_fields 做纯观测
+- 完整口径：gold/Jev-fully 1.0 / partial 0.25 / 礼貌停 -0.15 / 早退 -0.35 /
+  截断 -0.5 / 买错 -0.85 / 基础设施无效 0.0
+- Jev 灰区成本实测口径：1000 题 125 步约 300~600 次调用，$0.02 量级，可忽略
+

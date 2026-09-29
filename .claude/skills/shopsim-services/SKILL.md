@@ -88,3 +88,4 @@ docker exec shopping-gpu curl -s -X POST http://127.0.0.1:5700/api/shop_agent \
 5. DataLoader worker 死 → num_workers=0
 6. flash-attn 没装 → sdpa（`override_config.attn_implementation: sdpa`）
 7. `torch.cuda.is_available()` 会假 True → 验证 GPU 必须真做矩阵乘
+8. 长序列训练前向 OOM（log_softmax 的 [seq,vocab] logits 峰值）→ `use_fused_kernels: true` + `fused_kernel_options.impl_backend: torch`（512 token 分块输出头，峰值 56.8→43.8G）；生效标志是初始化日志 `Using Torch backend for fused kernels`
