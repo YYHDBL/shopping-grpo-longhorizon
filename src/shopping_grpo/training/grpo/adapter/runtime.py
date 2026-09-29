@@ -214,6 +214,28 @@ def _normal_terminal(state: dict) -> bool:
     )
 
 
+# reward v3.1（2026-09-29 定稿）：
+# - 截断档：预算耗尽未终局（token 上限或 35 步上限，error 固定为
+#   assistant_finished_without_environment_done）→ -0.5，低于早退(-0.35)、
+#   高于买错(-0.85)，堵住"拖满预算 0 分 > 礼貌收尾 -0.15"的漏洞
+# - 连续轮次惩罚：环境步数 soft=12 起线性、35 步（session 上限）拉满，
+#   λ=0.10；上限是最小结果档差(0.20)的一半，结果档排序不可能被翻转
+TRUNCATION_REWARD = -0.5
+LENGTH_PENALTY_SOFT_TURNS = 12.0
+LENGTH_PENALTY_MAX_TURNS = 35.0
+LENGTH_PENALTY_LAMBDA = 0.10
+
+
+def length_penalty_for_turns(turns: int) -> float:
+    """正常终局轨迹的连续轮次惩罚（v3.1）：[soft, max] 线性 0→λ，区间外截断。"""
+    if turns <= LENGTH_PENALTY_SOFT_TURNS:
+        return 0.0
+    ratio = (turns - LENGTH_PENALTY_SOFT_TURNS) / (
+        LENGTH_PENALTY_MAX_TURNS - LENGTH_PENALTY_SOFT_TURNS
+    )
+    return LENGTH_PENALTY_LAMBDA * min(ratio, 1.0)
+
+
 def reward_breakdown(state: dict) -> dict[str, float | bool]:
     """计算约束感知终局奖励；基础设施无效轨迹只返回诊断，不制造学习信号。"""
     invalid = bool(state.get("infrastructure_invalid"))
@@ -222,6 +244,38 @@ def reward_breakdown(state: dict) -> dict[str, float | bool]:
     if not math.isfinite(native):
         invalid = True
         native = 0.0
+
+    # v3.1 截断档：预算耗尽未终局（reward_version 此时通常还是 None，
+    # 环境没来得及报终局），必须在 v3/兜底分支之前拦截。
+    truncated = (
+        state.get("error") == "assistant_finished_without_environment_done"
+    )
+    if truncated and not invalid:
+        return {
+            "r_type": 0.0,
+            "r_att": 0.0,
+            "r_option": 0.0,
+            "r_price": 0.0,
+            "match_score": 0.0,
+            "evidence_coverage": 0.0,
+            "brand_score": 0.0,
+            "model_score": 0.0,
+            "core_function_score": 0.0,
+            "option_score": 0.0,
+            "full": 0.0,
+            "strict": 0.0,
+            "native": 0.0,
+            "semantic": 0.0,
+            "efficiency": 0.0,
+            "repeat_action_rate": 0.0,
+            "total": TRUNCATION_REWARD,
+            "terminal_utility": TRUNCATION_REWARD,
+            "truncated": True,
+            "purchase_success": 0.0,
+            "sampling_invalid": False,
+            "infrastructure_invalid": False,
+            "reward_unverifiable": False,
+        }
 
     if state.get("reward_version") == "shopsimulator-reward-v3":
         detail = state.get("reward_detail") or {}
@@ -236,9 +290,10 @@ def reward_breakdown(state: dict) -> dict[str, float | bool]:
             state.get("reward_type")
             in {"gold_purchase", "valid_alternative_purchase"}
         )
-        terminal_utility = (
-            native if normal_terminal and not invalid and not invalid_reward else 0.0
-        )
+        if normal_terminal and not invalid and not invalid_reward:
+            terminal_utility = native
+        else:
+            terminal_utility = 0.0
         semantic = float(purchase_success)
         return {
             "r_type": component("category"),
@@ -266,6 +321,7 @@ def reward_breakdown(state: dict) -> dict[str, float | bool]:
             ),
             "total": terminal_utility,
             "terminal_utility": terminal_utility,
+            "truncated": truncated,
             "purchase_success": float(purchase_success),
             "sampling_invalid": bool(invalid or invalid_reward),
             "infrastructure_invalid": invalid,
@@ -307,6 +363,11 @@ def terminal_reward(state: dict, mode: str = "native") -> float:
     if mode != "native":
         raise ValueError(f"unknown shopping reward mode: {mode!r}")
     if state.get("infrastructure_invalid") or state.get("error") or not _normal_terminal(state):
+        if (
+            state.get("error") == "assistant_finished_without_environment_done"
+            and not state.get("infrastructure_invalid")
+        ):
+            return TRUNCATION_REWARD  # v3.1 截断档
         return 0.0
     return float(state.get("final_reward", 0.0))
 

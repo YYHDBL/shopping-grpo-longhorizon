@@ -28,6 +28,12 @@ actor_rollout_ref:
     trust_remote_code: true
     enable_gradient_checkpointing: true
     use_remove_padding: true
+    # 分块输出头（外援方案 2026-09-29）：512 token/块过 lm_head，反向逐块重算，
+    # 不物化 [seq,vocab] logits —— 直接消除 step2 OOM 的来源（log_softmax 峰值）
+    use_fused_kernels: true
+    fused_kernel_options:
+      impl_backend: torch
+    enable_activation_offload: true            # 反向所需激活转移到 CPU
     override_config:
       attn_implementation: sdpa
   actor:
@@ -46,7 +52,7 @@ actor_rollout_ref:
       lr_warmup_steps_ratio: 0.1
     fsdp_config:
       optimizer_offload: true                  # 正式跑必开：解决跨步显存累积
-      param_offload: false
+      param_offload: true                      # run1 第二版：step2 长序列前向 OOM，再省 4.5G/卡
   rollout:
     name: vllm
     mode: async
@@ -54,7 +60,7 @@ actor_rollout_ref:
     temperature: 1.0
     top_p: 0.95
     tensor_model_parallel_size: 1
-    gpu_memory_utilization: 0.35               # 0.5 wake OOM；smoke 实测 0.35 稳
+    gpu_memory_utilization: 0.30               # run1 第二版：长轨迹 rollout 留更多余量
     max_num_seqs: 32
     max_model_len: 24576
     max_num_batched_tokens: 24576

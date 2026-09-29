@@ -17,6 +17,7 @@ from shopping_grpo.environment.projection import (
 )
 from shopping_grpo.training.grpo.adapter.runtime import (
     current_runtime_state,
+    length_penalty_for_turns,
     record_observation_projection,
     reward_breakdown,
     task_id_from_kwargs,
@@ -323,15 +324,27 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
             # V2 灰区判定：非 Gold 且硬门通过的购买，经 Jev 语义判断，
             # fully_satisfies 给满分 1.0（与 Gold 同权）；判定不可验证保持原值。
             jev_verdict = self._jev_grey_zone(state)
-            if jev_verdict is not None:
-                output.extra_fields.setdefault("shopping", {})["jev_choice"] = (
-                    jev_verdict.get("choice")
-                )
-                if jev_verdict.get("choice") == "fully_satisfies":
-                    output.reward_score = 1.0
+            if jev_verdict is not None and jev_verdict.get("choice") == "fully_satisfies":
+                output.reward_score = 1.0
+            # v3.1 连续轮次惩罚：只作用于正常终局（截断走离散 -0.5 档，
+            # 基础设施无效不产生学习信号），上限 0.10 不会翻转结果档排序。
+            turns = len(state["steps"])
+            penalty = (
+                length_penalty_for_turns(turns)
+                if state.get("done") and not state["error"]
+                and not state.get("infrastructure_invalid")
+                else 0.0
+            )
+            if penalty:
+                output.reward_score = float(output.reward_score) - penalty
             output.extra_fields["shopping"] = {
                 "task_id": task_id,
-                "steps": len(state["steps"]),
+                "steps": turns,
+                "turns": turns,
+                "length_penalty": -penalty,
+                "jev_choice": (
+                    jev_verdict.get("choice") if jev_verdict is not None else None
+                ),
                 "actions": [
                     {"tool": step["tool"], "parameters": step["parameters"]}
                     for step in state["steps"]
