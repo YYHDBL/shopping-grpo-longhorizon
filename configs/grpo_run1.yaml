@@ -1,5 +1,7 @@
-# V2 GRPO smoke 配置：colocate 4 卡、全参、n=8、24k 序列
-# 小批量验证：64 题 × 2 步 × group 8，验证 rollout→灰区 Jev→训练完整环
+# V2 GRPO 正式跑 run1：1000 题（th300/hard300/medium280/easy120）× 125 步
+# 基于已验证的 smoke 配置（worktree v2-fix 实测值），改动仅限正式跑必需项：
+#   optimizer_offload=true（跨步显存累积 OOM 的解）、125 步、save/test_freq=25、
+#   val_before_train=true + smoke.parquet 做 64 题贪婪验证集、SwanLab 云端。
 hydra:
   searchpath:
     - pkg://verl/trainer/config
@@ -10,17 +12,17 @@ defaults:
 
 data:
   train_files: ${oc.env:GRPO_TRAIN_FILE}
-  val_files: ${oc.env:GRPO_VAL_FILE,${oc.env:GRPO_TRAIN_FILE}}
-  train_batch_size: 8          # 每步 8 题
+  val_files: ${oc.env:GRPO_VAL_FILE}          # smoke.parquet：64 题贪婪评测，画 success_rate 曲线
+  train_batch_size: 8                          # 每步 8 题 × n=8 = 64 条轨迹
   max_prompt_length: 4096
-  max_response_length: 20480   # 轨迹生成上限（合计约 24k）
+  max_response_length: 20480                   # 轨迹生成上限（合计约 24k）
   return_raw_chat: true
   filter_overlong_prompts: true
   truncation: error
   num_workers: 0
 
 actor_rollout_ref:
-  hybrid_engine: true          # colocate：训练与 rollout 共用 4 卡
+  hybrid_engine: true                          # colocate：训练与 rollout 共用 4 卡
   model:
     path: ${oc.env:GRPO_MODEL_PATH}
     trust_remote_code: true
@@ -29,30 +31,30 @@ actor_rollout_ref:
     override_config:
       attn_implementation: sdpa
   actor:
-    ppo_mini_batch_size: 8
+    ppo_mini_batch_size: 8                     # 16 会 OOM（log_softmax），smoke 实测 8 稳
     ppo_micro_batch_size_per_gpu: 1
-    ppo_max_token_len_per_gpu: 24576
+    ppo_max_token_len_per_gpu: 24576           # 16384 会截断合法序列（实测 18k+）
     use_dynamic_bsz: true
     loss_agg_mode: token-mean
     clip_ratio_low: 0.2
     clip_ratio_high: 0.2
-    entropy_coeff: 0.0
+    entropy_coeff: 0.0                         # 纯记录，不影响 loss
     calculate_entropy: true
     use_kl_loss: false
     optim:
       lr: 1.0e-6
       lr_warmup_steps_ratio: 0.1
     fsdp_config:
-      optimizer_offload: false
+      optimizer_offload: true                  # 正式跑必开：解决跨步显存累积
       param_offload: false
   rollout:
     name: vllm
     mode: async
-    n: 8                       # group size：每题采 8 条
+    n: 8                                       # group size：每题采 8 条做组内比较
     temperature: 1.0
     top_p: 0.95
     tensor_model_parallel_size: 1
-    gpu_memory_utilization: 0.35  # colocate：0.5 会 wake OOM，smoke 实测 0.35 稳
+    gpu_memory_utilization: 0.35               # 0.5 wake OOM；smoke 实测 0.35 稳
     max_num_seqs: 32
     max_model_len: 24576
     max_num_batched_tokens: 24576
@@ -87,8 +89,8 @@ actor_rollout_ref:
 algorithm:
   adv_estimator: grpo
   use_kl_in_reward: false
-  norm_adv_by_std_in_grpo: false
-  disable_kl: true
+  norm_adv_by_std_in_grpo: false               # Dr. GRPO 风格：组内排名不加 std 归一化
+  disable_kl: true                             # 连参考模型都不加载
   loss_type: ppo_clip
 
 reward_model:
@@ -102,16 +104,15 @@ ray_kwargs:
         PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
 trainer:
-  total_epochs: 1
-  total_training_steps: 5      # smoke：只跑 2 步
-  save_freq: 100
-  test_freq: -1
-  val_before_train: false
+  total_epochs: 1                              # 1000 题 / 8 题/步 = 125 步，恰好 1 epoch
+  total_training_steps: 125
+  save_freq: 25                                # 步 25/50/75/100/125 存 checkpoint
+  test_freq: 25                                # 每 25 步跑 64 题贪婪验证
+  val_before_train: true                       # step0 基线点
   logger: [console, swanlab]
-  project_name: shopping-grpo-smoke
-  swanlab_mode: local
-  project_name: shopping-grpo-smoke
-  experiment_name: v2-smoke
+  swanlab_mode: cloud                          # 正式跑上云（API key 在 .env，launch 脚本注入）
+  project_name: shopping-grpo
+  experiment_name: v2-run1
   default_local_dir: ${oc.env:GRPO_OUTPUT_DIR}
   n_gpus_per_node: 4
   nnodes: 1

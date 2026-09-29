@@ -22,3 +22,6 @@ models/
 swanlog/
 wandb/
 logs/
+
+# 本地 worktree 与会话目录不入库（skill 文件除外）
+.claude/worktrees/
