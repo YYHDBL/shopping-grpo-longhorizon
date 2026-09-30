@@ -93,6 +93,55 @@ def install_torch_padding_fallback():
     attention_utils._get_attention_functions = lambda: functions
 
 
+def _patch_save_and_stop():
+    """SAVE_AND_STOP 标志文件：任意时刻触发，在下一个安全点保存并退出。
+
+    用户操作：touch $SHOPPING_GRPO_ROOT/outputs/SAVE_AND_STOP
+    两个检查点：步入口（step）与优势计算后（rollout 完成、梯度更新前）。
+    rollout 不改权重，所以 rollout 中途触发时保存的就是上一个完整步的状态，
+    最多损失当前步已生成的轨迹。标志处理后立即删除，防下次启动误触发。
+    退出用 sys.exit(0)：checkpoint 已同步落盘，Ray 侧的 actor 报错是预期噪音。
+    """
+    import sys
+
+    from verl.trainer.ppo.v1.trainer_base import PPOTrainer
+
+    flag = os.path.join(
+        os.environ.get("SHOPPING_GRPO_ROOT", "/data/jyh-yyh/shopping-grpo-longhorizon"),
+        "outputs",
+        "SAVE_AND_STOP",
+    )
+
+    def _save_and_exit(self):
+        import logging
+
+        os.remove(flag)
+        logging.getLogger(__name__).info(
+            "SAVE_AND_STOP detected: saving checkpoint then exiting"
+        )
+        self._save_checkpoint()
+        sys.exit(0)
+
+    _orig_step = PPOTrainer.step
+
+    def _step_with_stop_check(self, *args, **kwargs):
+        if os.path.exists(flag):
+            _save_and_exit(self)
+        return _orig_step(self, *args, **kwargs)
+
+    PPOTrainer.step = _step_with_stop_check
+
+    _orig_compute_advantage = PPOTrainer._compute_advantage
+
+    def _advantage_with_stop_check(self, batch, metrics):
+        out = _orig_compute_advantage(self, batch, metrics)
+        if os.path.exists(flag):
+            _save_and_exit(self)
+        return out
+
+    PPOTrainer._compute_advantage = _advantage_with_stop_check
+
+
 def install_worker_hooks():
     """worker_process_setup_hook 入口（容器内执行，run2 起配置指向这里）。
 
@@ -102,3 +151,5 @@ def install_worker_hooks():
     install_torch_padding_fallback()
     # 组级 reward 指标（run2 起）：早于 trainer_base 的 from-import 生效
     _patch_group_reward_metrics()
+    # 任意时刻停训保存（run2 起）：touch outputs/SAVE_AND_STOP 触发
+    _patch_save_and_stop()

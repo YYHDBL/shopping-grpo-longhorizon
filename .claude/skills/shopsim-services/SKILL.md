@@ -74,9 +74,10 @@ docker exec shopping-gpu curl -s -X POST http://127.0.0.1:5700/api/shop_agent \
 
 ## 6. 训练启动
 
-- **GRPO 正式跑**：容器内 tmux 会话执行 `bash /data/jyh-yyh/shopping-grpo-longhorizon/outputs/launch_grpo_run1.sh`（125 步 ~17h，UUID 选卡 4-7，SwanLab 云端）
+- **GRPO 正式跑**：容器内 tmux 会话执行对应 launch 脚本（`outputs/launch_grpo_run1.sh` / `launch_grpo_run2.sh`，UUID 选卡 4-7，SwanLab 云端）
+- **任意时刻停训保存**：`touch /data/jyh-yyh/shopping-grpo-longhorizon/outputs/SAVE_AND_STOP`——trainer 在下一个安全点（步入口或优势计算后，rollout 不改权重）保存 checkpoint 并退出，最多损失当前半步 rollout。等 5~25 分钟看到日志出现 SAVE_AND_STOP detected 即完成
 - SFT 已完成（172 步，val loss 0.292→0.278），不要重跑
-- 启动前检查：环境服务活（见 §3）、卡 4-7 空、`df /data` 有空间（每个 GRPO checkpoint ~18G，save_freq=25 共 5 个）
+- 启动前检查：环境服务活（见 §3）、卡 4-7 空、`df /data` 有空间（每个 GRPO checkpoint ~53G）
 
 **tmux 纪律**：长任务一律 tmux 里跑；退出 tmux 用 `Ctrl+B` 再 `D`（直接关终端/Ctrl+C 会杀前台训练进程）；进容器跑训练用 `docker exec -it shopping-gpu bash` 后再起 tmux 或直接跑。
 
