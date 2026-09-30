@@ -636,5 +636,86 @@ class GroupStatsTest(unittest.TestCase):
         self.assertEqual(stats["group/zero_variance_ratio"], 0.5)
 
 
+class LazyPatchTest(unittest.TestCase):
+    """patch_module_after_import 与延迟补丁的应用逻辑（不依赖 veRL）。"""
+
+    def _write_module(self, tmpdir, name, body):
+        import pathlib
+
+        path = pathlib.Path(tmpdir) / f"{name}.py"
+        path.write_text(body, encoding="utf-8")
+        return str(path)
+
+    def test_patch_applies_on_import_and_already_imported(self):
+        import importlib
+        import sys
+        import tempfile
+
+        from shopping_grpo.training.grpo.compat import patch_module_after_import
+
+        with tempfile.TemporaryDirectory() as td:
+            sys.path.insert(0, td)
+            # 三个文件先写齐：importlib 的目录缓存按 mtime 失效，
+            # import 之后再写同目录新文件可能因同秒 mtime 读不到
+            self._write_module(td, "lp_mod_a", "VALUE = 1\n")
+            self._write_module(td, "lp_mod_b", "VALUE = 2\n")
+            self._write_module(td, "lp_mod_c", "VALUE = 3\n")
+            try:
+                # 路径一：注册后首次导入时应用
+                patch_module_after_import("lp_mod_a", lambda m: setattr(m, "PATCHED", True))
+                mod_a = importlib.import_module("lp_mod_a")
+                self.assertTrue(mod_a.PATCHED)
+                self.assertEqual(mod_a.VALUE, 1)  # 模块体正常执行
+                # 路径二：已导入的模块直接应用
+                mod_b = importlib.import_module("lp_mod_b")
+                patch_module_after_import("lp_mod_b", lambda m: setattr(m, "PATCHED", True))
+                self.assertTrue(mod_b.PATCHED)
+                # 未注册的第三方导入不受影响
+                mod_c = importlib.import_module("lp_mod_c")
+                self.assertFalse(hasattr(mod_c, "PATCHED"))
+            finally:
+                sys.path.remove(td)
+                for name in ("lp_mod_a", "lp_mod_b", "lp_mod_c"):
+                    sys.modules.pop(name, None)
+
+    def test_save_and_stop_wraps_trainer(self):
+        import os
+        import tempfile
+        import types
+
+        from shopping_grpo.training.grpo.compat import _apply_save_and_stop
+
+        with tempfile.TemporaryDirectory() as td:
+            flag = os.path.join(td, "SAVE_AND_STOP")
+            calls = []
+
+            class FakeTrainer:
+                def step(self):
+                    return "orig_step"
+
+                def _compute_advantage(self, batch, metrics):
+                    return "orig_adv"
+
+                def _save_checkpoint(self):
+                    calls.append("saved")
+
+            module = types.SimpleNamespace(PPOTrainer=FakeTrainer)
+            _apply_save_and_stop(module, flag_path=flag)
+
+            # 无标志：两个方法透传
+            t = FakeTrainer()
+            self.assertEqual(t.step(), "orig_step")
+            self.assertEqual(t._compute_advantage({}, {}), "orig_adv")
+
+            # 有标志：保存、删标志、SystemExit 退出
+            open(flag, "w").close()
+            with self.assertRaises(SystemExit):
+                t.step()
+            self.assertEqual(calls, ["saved"])
+            self.assertFalse(os.path.exists(flag))
+            # 标志已删，后续调用恢复透传
+            self.assertEqual(t.step(), "orig_step")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
