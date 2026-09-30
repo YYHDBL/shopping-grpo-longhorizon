@@ -138,7 +138,9 @@ ray_kwargs:
         PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
 trainer:
-  total_epochs: 3                            # 1000 题 / 16 题/步 = 62.5 步/epoch，125 步 ≈ 2 epoch
+  total_epochs: 5                            # 动态采样下每步实际消耗 ~31 个题目实例
+                                             #（16 有效组 ÷ 52% 有效率），125 步 ≈ 3900 个；
+                                             # 1000 题 × 5 epoch = 5000 供给，留余量防断粮
   total_training_steps: 125
   save_freq: 10                              # 细粒度打捞点（12 个 × 53G，磁盘已核算）
   test_freq: 10
