@@ -38,10 +38,11 @@ docker exec -it shopping-gpu bash
 训练 rollout 必须的环境服务。Flask，唯一路由 `POST /api/shop_agent`，动作：`reset` / `interact` / `release_one` / `release_all`。`/health` 之类不存在，404 不代表挂了。
 
 两个实例（网络隔离，互不干扰）：
-- **容器内 80 槽 @5700**（训练用，rollout 并发 64 需要它）：
+- **容器内 160 槽 @5700**（训练用。**槽位数必须 ≥ train_batch_size × n**：run1 8×8=64 需要 80；run2 16×8=128 需要 160。并发超槽会产生抢槽失败的基础设施轨迹）：
   ```bash
-  docker exec shopping-gpu bash -c "cd /data/jyh-yyh/shopping-grpo-longhorizon/environments/ShopSimulator/shop_env/shop_env && SHOPSIM_ENV_SLOTS=80 SHOPSIM_PORT=5700 nohup python3 pack_api.py > /tmp/pack_api_container.log 2>&1 &"
+  docker exec -d shopping-gpu bash -c "cd /data/jyh-yyh/shopping-grpo-longhorizon/environments/ShopSimulator/shop_env/shop_env && SHOPSIM_ENV_SLOTS=160 SHOPSIM_PORT=5700 python3 pack_api.py > /tmp/pack_api_160.log 2>&1"
   ```
+  注意用 `docker exec -d`（`bash -c "... &"` 内嵌后台会被 exec 退出连带杀掉）
 - 宿主机 5700（tmux `shopsim-env`，采集期遗留 16 槽，一般不用管）
 
 验证（真实调用才算数）：
@@ -89,3 +90,7 @@ docker exec shopping-gpu curl -s -X POST http://127.0.0.1:5700/api/shop_agent \
 6. flash-attn 没装 → sdpa（`override_config.attn_implementation: sdpa`）
 7. `torch.cuda.is_available()` 会假 True → 验证 GPU 必须真做矩阵乘
 8. 长序列训练前向 OOM（log_softmax 的 [seq,vocab] logits 峰值）→ `use_fused_kernels: true` + `fused_kernel_options.impl_backend: torch`（512 token 分块输出头，峰值 56.8→43.8G）；生效标志是初始化日志 `Using Torch backend for fused kernels`
+9. 评测起 vLLM 服务必须带 `--enable-auto-tool-choice --tool-call-parser qwen3_coder`，否则第一通 tool_choice 请求 400
+10. veRL 0.9.1 `algorithm.disable_kl` 是死字段（源码无读取点），ref 加载实际由 `use_kl_loss`/`use_kl_in_reward` 控制
+11. colocate 崩溃后清显存：要连 `VLLM::EngineCore` 一起杀（不止 VLLM::Worker）
+12. GRPO checkpoint 目录比 SFT 多一层 `actor/`，合并时 `--local_dir` 指到 `global_step_N/actor`

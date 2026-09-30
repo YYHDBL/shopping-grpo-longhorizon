@@ -281,3 +281,41 @@ actor_rollout_ref:
 - 运维补充：评测 vLLM 必须带 `--enable-auto-tool-choice --tool-call-parser
   qwen3_coder`（照抄 scripts/serve_model.sh），漏了第一通 tool_choice 请求就 400
 
+---
+
+# 追记：2026-09-30，run2 筹备（外援刹车组合）
+
+## 二十二、run2 配置定稿与核实记录
+
+外援方案逐项对源码核实后采纳：KL 锚（use_kl_loss=true, 0.01, low_var_kl）+
+lr 2e-7（warmup 8 步 → cosine → min_lr_ratio 0.1）+ batch 16×n8=128 轨迹 +
+top_p 1.0 + rollout IS 修正（token, 阈值 2.0）+ filter_groups 显式关。
+完整配置 `configs/grpo_run2.yaml`（独立文件不继承，避免 hydra 合并惊喜）。
+
+**核实中的发现**：
+
+1. **`algorithm.disable_kl` 是死字段**：0.9.1 全源码无读取点，run1 里那行
+   true 是摆设；真正控制 ref 加载的是 `use_kl_loss` / `use_kl_in_reward`
+2. **`policy_loss.loss_mode`（默认 vanilla）、`filter_groups`、
+   `rollout_correction` 配置组都在**；lr 调度只有 constant|cosine 两选
+3. **组内 std/零方差组比例 veRL 算了但不记**（core_algos.py 的 group_mean_std
+   结果不进 metrics）——compat.py 里包装 `compute_data_metrics` 注入
+   `group/reward_std_mean` 与 `group/zero_variance_ratio`，随原 dict 自动进
+   console + SwanLab
+4. **宿主机/容器 veRL 版本分裂坑**：组级补丁最初写进 hook 主体，宿主机
+   .venv 的老版 veRL（DataProto 不在顶层）import 失败打挂单测——hook 拆成
+   `install_torch_padding_fallback`（宿主机可测）与 `install_worker_hooks`
+   （容器专用，配置指向后者）
+5. **环境槽位规则**：并发轨迹数 = train_batch_size × n，必须 ≤ SHOPSIM_ENV_SLOTS。
+   run1 8×8=64<80 幸运过关；run2 16×8=128>80 会产生抢槽失败的基础设施轨迹，
+   已扩到 160（重启环境服务，RAM 913G 富余）
+
+## 二十三、run2 冒烟验证清单（结果待补）
+
+- [ ] 分块输出头生效（Torch backend 标志）
+- [ ] actor/kl_loss 非零、值域合理（KL 锚实际起效）
+- [ ] group/* 两指标进 step 行与 SwanLab
+- [ ] ref model 上卡后显存峰值仍在 45~60G 带
+- [ ] 128 并发 rollout 零槽位错误
+- [ ] rollout_data_dir 落盘文件出现
+
