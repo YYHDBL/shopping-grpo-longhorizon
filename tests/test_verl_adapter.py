@@ -606,5 +606,35 @@ class RewardV31Test(unittest.TestCase):
         self.assertEqual(reward_breakdown(state)["total"], 1.0)
 
 
+class GroupStatsTest(unittest.TestCase):
+    """组级 reward 统计纯函数（compat.compute_group_stats）。"""
+
+    def test_zero_variance_and_std(self):
+        from shopping_grpo.training.grpo.compat import compute_group_stats
+
+        # 组 A：8 条全 1.0（零方差）；组 B：4 条 0.25 / 4 条 -0.85（有大方差）
+        uids = [f"task-a_0_{i}" for i in range(8)] + [f"task-b_0_{i}" for i in range(8)]
+        scores = [1.0] * 8 + [0.25] * 4 + [-0.85] * 4
+        stats = compute_group_stats(scores, uids)
+        self.assertEqual(stats["group/zero_variance_ratio"], 0.5)
+        # 组 B 的 std=0.55，组 A 的 std=0，均值 0.275
+        self.assertAlmostEqual(stats["group/reward_std_mean"], 0.275, places=3)
+
+    def test_single_member_groups_skipped(self):
+        from shopping_grpo.training.grpo.compat import compute_group_stats
+
+        stats = compute_group_stats([1.0, 0.0], ["t1_0_0", "t2_0_0"])
+        self.assertEqual(stats, {})
+
+    def test_rollout_suffix_separates_groups(self):
+        from shopping_grpo.training.grpo.compat import compute_group_stats
+
+        # 同任务不同 rollout 轮次是不同组（epoch 重访）
+        stats = compute_group_stats(
+            [1.0, 1.0, 0.0, 0.0], ["t1_0_0", "t1_0_1", "t1_1_0", "t1_1_1"]
+        )
+        self.assertEqual(stats["group/zero_variance_ratio"], 1.0)
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
