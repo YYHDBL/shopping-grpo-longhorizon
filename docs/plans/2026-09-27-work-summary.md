@@ -264,3 +264,20 @@ actor_rollout_ref:
 - 评测：与 SFT/base 同管线（冻结 1092 题、贪婪、8 并发、vLLM 8000 + 环境 5700），
   之后 evaluate_jev.py 灰区判定，与 SFT 60.7% / base 39.2% 对比
 
+## 二十一、run1 评测结果：三臂定稿，GRPO 本轮无收益
+
+| 臂 | 严格完成率 | 真实完成率（Jev） |
+|---|---|---|
+| Base | 39.2% | 52.8% |
+| SFT | 60.7% | 72.1% |
+| **GRPO run1 step50** | **57.4%（627）** | **70.3%（740/1052）** |
+
+- Jev 灰区：247 条替代购买中 113 条升级 fully（46%，与 SFT 时代校准一致）
+- 退化形态：gold -36 → repeat_loop +33（策略变抖），顶格拖延反而 -15
+- 评测耗时 50 分钟（SFT 同管线 62 分钟，速率同量级）
+- 定性：熵爆炸前的 step50 也已受损——val@25 掉到 0.490 说明发散从 warmup 后
+  不久就开始了，"选未发散 checkpoint"救不回已发生的学习污染
+- 处置：vLLM 服务已停、卡清空；等待外援经验配置起 run2
+- 运维补充：评测 vLLM 必须带 `--enable-auto-tool-choice --tool-call-parser
+  qwen3_coder`（照抄 scripts/serve_model.sh），漏了第一通 tool_choice 请求就 400
+
