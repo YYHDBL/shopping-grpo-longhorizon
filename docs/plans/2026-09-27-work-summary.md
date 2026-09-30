@@ -329,3 +329,36 @@ top_p 1.0 + rollout IS 修正（token, 阈值 2.0）+ filter_groups 显式关。
 - 步时 1218s（128 条轨迹），125 步全程序约 42h
 - 结尾 DataLoader worker killed 的 Traceback 是退出期析构噪音（weakref），无害
 
+---
+
+# 追记：2026-09-30，SAVE_AND_STOP 落地与 run2 启动
+
+## 二十四、任意时刻停训保存（SAVE_AND_STOP）
+
+用户需求：不卡 save_freq 保存点，随时可停。关键认知：一步内权重只在最后
+optimizer 更新瞬间变化，rollout 阶段（步时 ~65%）权重保持上一个完整步的
+状态——中途打断直接存盘即是"回退到上一个完整步"，无需回退。
+
+实现：compat.py 给 PPOTrainer.step 与 _compute_advantage（rollout 后、
+梯度更新前的安全点）挂标志文件检查，`touch outputs/SAVE_AND_STOP` 触发
+保存 + sys.exit(0)。实弹验证通过（07:39 前的冒烟）：rollout 中途放标志 →
+本步 rollout 结束后命中 → 36G checkpoint 落盘 → 标志自动删 → 干净退出。
+
+## 二十五、NCCL Duplicate GPU 复发与修复（hook 期导入纪律）
+
+06:39 测试跑在 ref model FSDP 建组时复发 NCCL Duplicate GPU（03:19 同
+配置冒烟通过）。实测 trainer_base / metric_utils / v1.utils 的 import 均
+触发 CUDA 初始化；单一理论无法同时解释一过一挂，根因未 100% 钉死。
+修复采用收敛策略：**worker_process_setup_hook 期只保留 attention_utils
+最小导入集（run1 v3 实证安全），其余补丁经 meta_path 钩子延迟到模块被
+业务代码正常导入后应用**（此时 Ray per-worker 环境已就绪）。延迟机制与
+包装逻辑有宿主机单测。07:10 冒烟验证：init/建组/三补丁全部正常。
+教训：**hook 里每加一个 import 都是在动 worker 的初始化时序，非必要不导入**。
+
+## 二十六、run2 正式启动（07:39）
+
+step0 验证 0.685。step1 全仪表首秀：动态采样实锤
+（evicted 27 条、**进入训练的组零方差率 0.0**、组内 std 0.484）、
+kl_loss 0.0（warmup 算术预期）、峰值 47.7G、步时 1584s（只比无过滤贵 30%）。
+全程修正 **~55h**，约 10-03 凌晨完成。SAVE_AND_STOP 随时可用。
+
