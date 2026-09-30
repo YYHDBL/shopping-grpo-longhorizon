@@ -220,3 +220,47 @@ actor_rollout_ref:
   截断 -0.5 / 买错 -0.85 / 基础设施无效 0.0
 - Jev 灰区成本实测口径：1000 题 125 步约 300~600 次调用，$0.02 量级，可忽略
 
+---
+
+# 追记：2026-09-30 凌晨，run1 熵爆炸中止与打捞
+
+## 十九、run1 v3 训练到 step93 主动中止：熵爆炸
+
+**现象**（数据全部来自 step 指标行）：
+
+- 熵：step1-41 稳定 0.36~0.48 → step45 起爬升（0.64）→ step55 加速 →
+  step75 1.85 → step87 **6.03** → step90 5.75（爆炸，采样分布接近随机）
+- 验证（64 题贪婪）：step0 0.671 → **step25 0.490（掉坑）** → step50 0.698 →
+  step75 0.697（贪婪性能存活——argmax 对适度平坦不敏感，但采样已废）
+- 训练 reward 剧烈震荡不收敛；step91 批均值 **-0.17**（采样大面积失败）
+- grad_norm 0.87~0.97 正常、轨迹长度稳定 4.5~7k、clipfrac 恒 0（正常）
+
+**诊断**：无 KL 锚 GRPO 的策略熵爆炸（不是塌缩）。组内信号全程存活
+（优势范围始终 ±1~1.5，从没塌 0），不是"没信号漂移"，而是信号大 +
+全无刹车（no-KL、无熵约束、无 std 归一化）+ lr 1e-6 持续单向推。
+恶性循环：熵涨 → 采样更随机 → 失败率涨 → 组内分差更大（优势 max 从
+0.69 涨到 1.51）→ 推力更强 → 熵更涨。
+
+**打捞**：checkpoints 25/50/75 在。选 **step50** 做正式评测（val 0.698 与 75 持平，
+但熵 0.48 在健康区、75 的 1.85 已进发散段）。
+
+**下一轮必改清单**：
+
+1. 记组级指标：agent_loop 结算处算每题 8 条的组内 mean/std 进 metrics
+   （veRL 无现成组级指标，本次只有优势 min/max 代理）
+2. 开 `trainer.rollout_data_dir` 落盘每条轨迹 reward，可离线复盘
+3. 加刹车（三选一或组合）：KL 锚（ref model，显存现在装得下）、
+   负 entropy 系数、lr 减半 + cosine 衰减
+4. 早期预警线：熵连续 10 步 > 0.8 或验证单次掉 >10pp 即人工介入
+
+**运维教训**：colocate 崩溃后清显存要连 `VLLM::EngineCore` 一起杀
+（不是只有 VLLM::Worker）；GRPO checkpoint 目录比 SFT 多一层 `actor/`，
+合并命令 local_dir 要指到 `global_step_N/actor`。
+
+## 二十、本次评测安排
+
+- 合并：`verl.model_merger merge --backend fsdp --local_dir checkpoints/grpo_run1/
+  global_step_50/actor --target_dir outputs/models/grpo-50-merged`（18G）
+- 评测：与 SFT/base 同管线（冻结 1092 题、贪婪、8 并发、vLLM 8000 + 环境 5700），
+  之后 evaluate_jev.py 灰区判定，与 SFT 60.7% / base 39.2% 对比
+
