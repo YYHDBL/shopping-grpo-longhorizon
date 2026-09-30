@@ -4,13 +4,13 @@ import os
 def compute_group_stats(scores: list[float], uids: list[str]) -> dict[str, float]:
     """组级 reward 统计（纯函数，宿主机可单测）。
 
-    uid 形如 "<task-uuid>_<rollout>_<sample>"，去掉末段（sample）即组 ID
-    = task_rollout（同任务不同 epoch 轮次是不同组）；单成员组无组内方差，
-    跳过。返回空 dict 表示没有可统计的组。
+    uid 形如 "<task-uuid>_<sample_idx>_<attempt>"（实测 run2 smoke 落盘：
+    同任务 8 条采样的中间段递增 0..7），去掉末两段即组 ID；单成员组无组内
+    方差，跳过。返回空 dict 表示没有可统计的组。
     """
     groups: dict[str, list[float]] = {}
     for score, uid in zip(scores, uids):
-        groups.setdefault(str(uid).rsplit("_", 1)[0], []).append(float(score))
+        groups.setdefault(str(uid).rsplit("_", 2)[0], []).append(float(score))
     stds = []
     for members in groups.values():
         if len(members) > 1:

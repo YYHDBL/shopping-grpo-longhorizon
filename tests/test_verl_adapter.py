@@ -629,11 +629,11 @@ class GroupStatsTest(unittest.TestCase):
     def test_rollout_suffix_separates_groups(self):
         from shopping_grpo.training.grpo.compat import compute_group_stats
 
-        # 同任务不同 rollout 轮次是不同组（epoch 重访）
-        stats = compute_group_stats(
-            [1.0, 1.0, 0.0, 0.0], ["t1_0_0", "t1_0_1", "t1_1_0", "t1_1_1"]
-        )
-        self.assertEqual(stats["group/zero_variance_ratio"], 1.0)
+        # 真实结构（run2 smoke 落盘实测）：中间段是 sample 序号 0..7，
+        # 组 ID = task uuid（去末两段）
+        uids = [f"t1_{i}_0" for i in range(8)] + [f"t2_{i}_0" for i in range(8)]
+        stats = compute_group_stats([1.0] * 8 + [0.25] * 4 + [-0.85] * 4, uids)
+        self.assertEqual(stats["group/zero_variance_ratio"], 0.5)
 
 
 if __name__ == "__main__":  # pragma: no cover

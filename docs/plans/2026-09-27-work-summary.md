@@ -310,12 +310,22 @@ top_p 1.0 + rollout IS 修正（token, 阈值 2.0）+ filter_groups 显式关。
    run1 8×8=64<80 幸运过关；run2 16×8=128>80 会产生抢槽失败的基础设施轨迹，
    已扩到 160（重启环境服务，RAM 913G 富余）
 
-## 二十三、run2 冒烟验证清单（结果待补）
+## 二十三、run2 冒烟结果（3 步全过，2026-09-30 04:10）
 
-- [ ] 分块输出头生效（Torch backend 标志）
-- [ ] actor/kl_loss 非零、值域合理（KL 锚实际起效）
-- [ ] group/* 两指标进 step 行与 SwanLab
-- [ ] ref model 上卡后显存峰值仍在 45~60G 带
-- [ ] 128 并发 rollout 零槽位错误
-- [ ] rollout_data_dir 落盘文件出现
+- [x] 分块输出头生效（actor + ref 双模型）
+- [x] KL 锚工作：step3 kl_loss=4.06e-4 非零。**step1/2 的 0.0 是算术必然**：
+  warmup 期 lr 仅 2.5e-8，bf16 下权重未挪动 → 策略与 ref 逐 bit 相同 → KL 恰为 0
+- [x] 显存峰值 61.9G（ref + batch16 + IS 修正），余量 17G，零 OOM
+- [x] 128 并发 rollout 零抢槽错误（160 槽）
+- [x] rollout_data_dir 每步一个 jsonl，含 uid/score/完整轨迹
+- [~] 组级指标：smoke 期间补丁经历两版修复后定稿——
+  ① metrics_batch 不带 uid（TensorDict 重建），改两段式：包装优势计算函数
+  暂存 + metrics 包装器注入；② **uid 真实结构是 `<task>_<sample>_<attempt>`**
+  （中间段 0..7 递增，实测落盘确认），组 ID 去末两段。教训：改分组逻辑
+  必须先看真实数据，不能按想象中的格式写
+- **零方差组预览（前 3 步 48 组）：reward_std_mean 0.248、
+  零方差组 47.9%**——近半 rollout 无学习信号，run2 全程实测后
+  run3 评估开 filter_groups（动态采样）
+- 步时 1218s（128 条轨迹），125 步全程序约 42h
+- 结尾 DataLoader worker killed 的 Traceback 是退出期析构噪音（weakref），无害
 
