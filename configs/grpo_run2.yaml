@@ -114,7 +114,10 @@ algorithm:
   disable_kl: false                          # 死字段（源码无读取点），置 false 表达语义
   loss_type: ppo_clip                        # 顶层 loss_type 不能丢（run1 靠它生效）
   filter_groups:
-    enable: false                            # 动态采样暂不开：先测量零方差组比例再决定
+    enable: true                             # DAPO 动态采样：零方差组（实测 47.9%）淘汰换新题
+    metric: reward                           # 必填（enable 时缺失直接 ValueError）
+    max_num_gen_batches: 0                   # V1 ReplayBuffer 忽略此值（源码有警告），留 0
+    max_inflight_gen_batches: 1              # 同时在飞的补采批次上限，峰值并发仍 128 ≤ 160 槽
   rollout_correction:                        # rollout 引擎与训练引擎的概率差修正
     bypass_mode: false
     rollout_is: token
