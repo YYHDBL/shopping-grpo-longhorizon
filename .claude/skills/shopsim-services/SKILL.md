@@ -95,3 +95,4 @@ docker exec shopping-gpu curl -s -X POST http://127.0.0.1:5700/api/shop_agent \
 10. veRL 0.9.1 `algorithm.disable_kl` 是死字段（源码无读取点），ref 加载实际由 `use_kl_loss`/`use_kl_in_reward` 控制
 11. colocate 崩溃后清显存：要连 `VLLM::EngineCore` 一起杀（不止 VLLM::Worker）
 12. GRPO checkpoint 目录比 SFT 多一层 `actor/`，合并时 `--local_dir` 指到 `global_step_N/actor`
+13. **容器僵尸堆积会杀死 NVML**：容器 PID 1 是 sleep 不收尸，训练崩溃/停止后僵尸越积越多（实测 470→1300+），NVML 初始化枚举进程时直接 "Failed to initialize NVML: Unknown Error"（宿主机正常）。解法：`docker restart shopping-gpu`（清零），然后重启环境服务（160 槽）+ ckpt-prune tmux。长训练后起任何新 GPU 进程前先 `nvidia-smi -L` 验一下
