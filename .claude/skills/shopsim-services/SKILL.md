@@ -53,13 +53,17 @@ docker exec shopping-gpu curl -s -X POST http://127.0.0.1:5700/api/shop_agent \
 ```
 80 槽初始化要几分钟（日志 "Environment N is being initialized" 走到 79 才监听）。
 
-## 4. 模型权重
+## 4. 模型权重与训练数据
 
 | 路径 | 大小 | 用途 |
 |---|---|---|
 | `models/Qwen3.5-9B/` | 19G | Base 原始权重（基线评测/回滚） |
 | `checkpoints/sft_v2_run1/global_step_172/` | 53G | SFT 最终步（veRL 格式） |
 | `outputs/models/sft-merged/` | 18G | SFT 合并后 HF 格式（**GRPO 起点**、SFT 评测用） |
+
+**训练数据（唯一合法来源）**：
+- GRPO：`outputs/grpo/train_1000_curriculum.parquet`（1000 题，run3 用）或 `train_1000.parquet`（run1/run2 用）；验证 `outputs/grpo/smoke.parquet`（64 题）
+- **`data/grpo/*.parquet` 已弃用禁止使用**：实测与冻结评测集重叠 43 题、与 SFT 教材重叠 249 题（隔离契约违规）。重排脚本 `scripts/reorder_grpo_curriculum.py` 含隔离自校验可参考
 
 ## 5. 模型 API 端点（key 全在 `.env`）
 
