@@ -96,6 +96,7 @@ class OpenAIChatClient:
         token_counter=None,
         observation_token_counter=None,
         transport=None,
+        stream=False,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -107,6 +108,14 @@ class OpenAIChatClient:
         self.max_tokens = int(max_tokens)
         self.last_usage = None
         self.total_usage = {"input": 0, "output": 0, "cached": 0}
+        # 评测流水线指标（2026-10-01）：LLM 调用次数、累计时延、TTFT 采样。
+        # 客户端按任务创建，累加器即任务级统计；TTFT 仅流式路径可测。
+        self.stream = bool(stream)
+        self.llm_calls = 0
+        self.llm_latency_ms_total = 0.0
+        self.ttft_ms_samples = []
+        self.last_latency_ms = None
+        self.last_ttft_ms = None
         if self.max_tokens < 1:
             raise ValueError("max_tokens must be positive")
         self.thinking = bool(thinking)
@@ -215,8 +224,17 @@ class OpenAIChatClient:
         url = self.base_url if self.responses_api else f"{self.base_url}/chat/completions"
         for attempt in range(MODEL_COMPLETION_RETRIES + 1):
             try:
+                ttft_ms = None
                 if self.transport is not None:
+                    started = time.monotonic()
                     response = self.transport(url, payload, headers, self.timeout)
+                    latency_ms = (time.monotonic() - started) * 1000.0
+                    usage = response.get("usage")
+                    message = _response_message(response, responses_api=self.responses_api)
+                elif self.stream and not self.responses_api:
+                    message, usage, latency_ms, ttft_ms = self._stream_chat(
+                        url, payload, headers
+                    )
                 else:
                     request = Request(
                         url,
@@ -224,22 +242,91 @@ class OpenAIChatClient:
                         headers=headers,
                         method="POST",
                     )
+                    started = time.monotonic()
                     # 直连：绕过环境代理，采集不依赖 SSH 隧道。
                     with _DIRECT_OPENER.open(request, timeout=self.timeout) as raw:
                         response = json.loads(raw.read().decode("utf-8"))
-                self.last_usage = response.get("usage")
-                usage = self.last_usage or {}
+                    latency_ms = (time.monotonic() - started) * 1000.0
+                    usage = response.get("usage")
+                    message = _response_message(response, responses_api=self.responses_api)
+                self.last_usage = usage
+                usage = usage or {}
                 self.total_usage["input"] += usage.get("prompt_tokens") or 0
                 self.total_usage["output"] += usage.get("completion_tokens") or 0
                 self.total_usage["cached"] += (
                     (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
                     or 0
                 )
-                return _response_message(response, responses_api=self.responses_api)
+                self.llm_calls += 1
+                self.llm_latency_ms_total += latency_ms
+                self.last_latency_ms = latency_ms
+                self.last_ttft_ms = ttft_ms
+                if ttft_ms is not None:
+                    self.ttft_ms_samples.append(ttft_ms)
+                return message
             except (RemoteDisconnected, TimeoutError, URLError):
                 if attempt >= MODEL_COMPLETION_RETRIES:
                     raise
                 time.sleep(MODEL_RETRY_DELAY_SECONDS * (attempt + 1))
+
+    def _stream_chat(self, url, payload, headers):
+        """流式请求（评测指标用）：累积 SSE 分片，返回 (message, usage, latency_ms, ttft_ms)。
+
+        TTFT 只有流式可测。工具调用分片按 index 拼接（vLLM 在首片发 id/name、
+        后续片追加 arguments）；末片在 include_usage 下携带 usage。
+        """
+        payload = dict(payload, stream=True, stream_options={"include_usage": True})
+        request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        started = time.monotonic()
+        ttft_ms = None
+        usage = None
+        content_parts = []
+        tool_calls = {}
+        with _DIRECT_OPENER.open(request, timeout=self.timeout) as raw:
+            for raw_line in raw:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                if chunk.get("usage"):
+                    usage = chunk["usage"]
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                if delta.get("content"):
+                    if ttft_ms is None:
+                        ttft_ms = (time.monotonic() - started) * 1000.0
+                    content_parts.append(delta["content"])
+                for fragment in delta.get("tool_calls") or []:
+                    if ttft_ms is None:
+                        ttft_ms = (time.monotonic() - started) * 1000.0
+                    index = fragment.get("index", 0)
+                    slot = tool_calls.setdefault(
+                        index,
+                        {"id": None, "type": "function",
+                         "function": {"name": "", "arguments": ""}},
+                    )
+                    if fragment.get("id"):
+                        slot["id"] = fragment["id"]
+                    function = fragment.get("function") or {}
+                    if function.get("name"):
+                        slot["function"]["name"] += function["name"]
+                    if function.get("arguments"):
+                        slot["function"]["arguments"] += function["arguments"]
+        latency_ms = (time.monotonic() - started) * 1000.0
+        message = {"role": "assistant", "content": "".join(content_parts) or None}
+        if tool_calls:
+            message["tool_calls"] = [tool_calls[i] for i in sorted(tool_calls)]
+        return message, usage, latency_ms, ttft_ms
 
     def project_observation(self, tool_name, observation, parameters=None):
         if self.observation_token_budget is None:
@@ -312,6 +399,8 @@ def collect_for_task(
     attempt_index=0,
 ):
     """执行一个任务并返回完整轨迹；所有异常都会被写入轨迹后再释放环境。"""
+    task_started = datetime.now(timezone.utc)
+    env_latency_ms_total = 0.0
     trajectory = {
         "trajectory_id": str(uuid4()),
         "task_id": int(task["task_id"]),
@@ -420,7 +509,9 @@ def collect_for_task(
             # 只有通过当前 observation 守卫的调用才会触碰环境并消耗一个执行步骤。
             # 子页去重键在执行前从当前（详情页）observation 提取。
             subpage_key = subpage_visit_key(name, latest_observation)
+            env_started = time.monotonic()
             step = _execute_tool_call(env, tool_call, len(trajectory["steps"]))
+            env_latency_ms_total += (time.monotonic() - env_started) * 1000.0
             raw_observation = step["observation"]
             projector = getattr(client, "project_observation", None)
             if projector is not None:
@@ -477,7 +568,45 @@ def collect_for_task(
                 "traceback": traceback.format_exc(),
             }
             trajectory["status"] = "environment_release_failed"
+        # 指标在所有返回路径（含早退）上统一附加；finally 内赋值对已返回的
+        # 同一 dict 对象同样生效。
+        trajectory["metrics"] = _trajectory_metrics(
+            client, task_started, env_latency_ms_total
+        )
     return trajectory
+
+
+def _trajectory_metrics(client, task_started, env_latency_ms_total):
+    """轨迹级过程指标（2026-10-01）：墙钟、LLM 时延/TTFT、token 用量、环境耗时。
+
+    假客户端（单测）不暴露累加器时只产出墙钟与环境耗时，其余字段缺席。
+    """
+    metrics = {
+        "task_started_at": task_started.isoformat(),
+        "task_duration_ms": (
+            datetime.now(timezone.utc) - task_started
+        ).total_seconds() * 1000.0,
+        "env_latency_ms_total": env_latency_ms_total,
+    }
+    llm_calls = getattr(client, "llm_calls", None)
+    if llm_calls is None:
+        return metrics
+    samples = list(getattr(client, "ttft_ms_samples", []) or [])
+    usage = getattr(client, "total_usage", None) or {}
+    metrics.update(
+        {
+            "llm_calls": int(llm_calls),
+            "llm_latency_ms_total": float(
+                getattr(client, "llm_latency_ms_total", 0.0)
+            ),
+            "llm_ttft_ms_mean": (sum(samples) / len(samples)) if samples else None,
+            "llm_ttft_ms_max": max(samples) if samples else None,
+            "prompt_tokens": int(usage.get("input") or 0),
+            "completion_tokens": int(usage.get("output") or 0),
+            "cached_tokens": int(usage.get("cached") or 0),
+        }
+    )
+    return metrics
 
 
 def append_jsonl(path, rows):

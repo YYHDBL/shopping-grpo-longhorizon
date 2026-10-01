@@ -75,13 +75,52 @@ def summarize(trajectories_path, tasks):
     strict_task_ids = set()
     trajectory_count = 0
     reward_types = Counter()
+    infra_failures = 0
+    model_failures = 0
+    process = {
+        "task_duration_ms": [],
+        "llm_ttft_ms": [],
+        "llm_latency_ms": [],
+        "completion_tokens": [],
+        "env_latency_ms": [],
+    }
     for raw in trajectories_path.open(encoding="utf-8"):
-        normalized = normalize_trajectory(json.loads(raw))
+        loaded = json.loads(raw)
+        normalized = normalize_trajectory(loaded)
         outcome = compute_deterministic_metrics(normalized)["reward_and_outcome"]
         if outcome["strict_gold_success"]:
             strict_task_ids.add(int(normalized["task_id"]))
         reward_types[str(outcome["reward_type"])] += 1
         trajectory_count += 1
+        # 失败归因分离（2026-10-01）：基础设施故障与模型失败不得混算
+        if _is_infrastructure_failure(loaded):
+            infra_failures += 1
+        elif loaded.get("status") == "error":
+            model_failures += 1
+        metrics = loaded.get("metrics") or {}
+        for key, field in (
+            ("task_duration_ms", "task_duration_ms"),
+            ("llm_ttft_ms", "llm_ttft_ms_mean"),
+            ("llm_latency_ms", "llm_latency_ms_total"),
+            ("completion_tokens", "completion_tokens"),
+            ("env_latency_ms", "env_latency_ms_total"),
+        ):
+            value = metrics.get(field)
+            if isinstance(value, (int, float)):
+                process[key].append(float(value))
+
+    def _stats(values):
+        if not values:
+            return None
+        ordered = sorted(values)
+        return {
+            "mean": sum(ordered) / len(ordered),
+            "p50": ordered[len(ordered) // 2],
+            "p95": ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))],
+            "max": ordered[-1],
+        }
+
+    process_metrics = {name: _stats(values) for name, values in process.items()}
 
     dimensions = {
         "difficulty": "by_difficulty",
@@ -111,6 +150,9 @@ def summarize(trajectories_path, tasks):
         "strict_gold_success_count": strict,
         "strict_gold_success_rate": (strict / expected) if expected else 0.0,
         "reward_type_counts": dict(sorted(reward_types.items())),
+        "infrastructure_failure_count": infra_failures,
+        "model_failure_count": model_failures,
+        "process_metrics": process_metrics,
         **buckets,
     }
 
@@ -184,6 +226,7 @@ def main():
             max_tokens=args.max_tokens,
             timeout=120,
             thinking=False,
+            stream=True,  # 评测流水线采 TTFT（2026-10-01）
             context_window=24576,
             context_safety_margin=512,
             context_compaction_enable=True,
