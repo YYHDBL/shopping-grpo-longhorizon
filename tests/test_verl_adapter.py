@@ -552,8 +552,83 @@ class VerlAdapterRuntimeTest(unittest.TestCase):
         asyncio.run(run())
 
 
+class RewardV4ExplorationTest(unittest.TestCase):
+    """v4：买错细分（探索充分度 0-3 → 尽力 -0.45 / 草率 -1.00）。"""
+
+    def _step(self, tool, **params):
+        return {"tool": tool, "parameters": params}
+
+    def test_full_exploration_scores_three(self):
+        from shopping_grpo.training.grpo.adapter.runtime import exploration_score
+
+        state = {"steps": [
+            self._step("search_products", query="红酒 礼盒"),
+            self._step("search_products", query="红酒 婚庆"),
+            self._step("open_product", asin="A1"),
+            self._step("open_product", asin="A2"),
+            self._step("view_features"),
+            self._step("buy_now", asin="A2"),
+        ]}
+        score, detail = exploration_score(state)
+        self.assertEqual(score, 3)
+        self.assertEqual(detail["opened_candidates"], 2)
+        self.assertEqual(detail["distinct_queries"], 2)
+        self.assertTrue(detail["verified_information_page"])
+
+    def test_careless_scores_zero(self):
+        from shopping_grpo.training.grpo.adapter.runtime import exploration_score
+
+        # 搜一次、开一个、直接买——典型的"赌一把"
+        state = {"steps": [
+            self._step("search_products", query="红酒"),
+            self._step("open_product", asin="A1"),
+            self._step("buy_now", asin="A1"),
+        ]}
+        score, _ = exploration_score(state)
+        self.assertEqual(score, 0)
+
+    def test_same_product_opened_twice_counts_once(self):
+        from shopping_grpo.training.grpo.adapter.runtime import exploration_score
+
+        state = {"steps": [
+            self._step("search_products", query="红酒"),
+            self._step("open_product", asin="A1"),
+            self._step("open_product", asin="A1"),  # 同一商品重复打开不算比较
+            self._step("open_product", asin="A1"),
+        ]}
+        score, detail = exploration_score(state)
+        self.assertEqual(detail["opened_candidates"], 1)
+        self.assertEqual(score, 0)
+
+    def test_boundary_two_is_sufficient(self):
+        from shopping_grpo.training.grpo.adapter.runtime import (
+            EXPLORATION_SUFFICIENT_SCORE, exploration_score,
+        )
+
+        # 比较 + 核验 = 2 分 → 尽力档
+        state = {"steps": [
+            self._step("search_products", query="红酒"),
+            self._step("open_product", asin="A1"),
+            self._step("open_product", asin="A2"),
+            self._step("view_reviews"),
+        ]}
+        score, _ = exploration_score(state)
+        self.assertEqual(score, EXPLORATION_SUFFICIENT_SCORE)
+
+    def test_reward_tiers_ordering_v4(self):
+        from shopping_grpo.training.grpo.adapter.runtime import (
+            TRUNCATION_REWARD, WRONG_PURCHASE_CARELESS_REWARD,
+            WRONG_PURCHASE_EFFORT_REWARD,
+        )
+
+        # v4 排序（从好到坏）：早退(-0.35) > 尽力买错(-0.45) > 截断(-0.65) > 草率买错(-1.00)
+        self.assertGreater(-0.35, WRONG_PURCHASE_EFFORT_REWARD)
+        self.assertGreater(WRONG_PURCHASE_EFFORT_REWARD, TRUNCATION_REWARD)
+        self.assertGreater(TRUNCATION_REWARD, WRONG_PURCHASE_CARELESS_REWARD)
+
+
 class RewardV31Test(unittest.TestCase):
-    """v3.1：截断档 -0.5；连续长度惩罚不设（用户裁决 2026-09-29）。"""
+    """v3.1：截断档（v4 起 -0.65）；连续长度惩罚不设（用户裁决 2026-09-29）。"""
 
     def _truncated_state(self) -> dict:
         state = make_runtime_state(task_id=9, max_steps=35)
@@ -567,11 +642,11 @@ class RewardV31Test(unittest.TestCase):
     def test_truncation_gets_discrete_penalty_in_both_modes(self):
         state = self._truncated_state()
         breakdown = reward_breakdown(state)
-        self.assertEqual(breakdown["total"], -0.5)
+        self.assertEqual(breakdown["total"], -0.65)  # v4：白卷下调（原 -0.5）
         self.assertTrue(breakdown["truncated"])
         self.assertFalse(breakdown["sampling_invalid"])
-        self.assertEqual(terminal_reward(state, mode="native"), -0.5)
-        self.assertEqual(terminal_reward(state, mode="constraint_aware"), -0.5)
+        self.assertEqual(terminal_reward(state, mode="native"), -0.65)
+        self.assertEqual(terminal_reward(state, mode="constraint_aware"), -0.65)
 
     def test_truncation_with_infra_invalid_stays_zero(self):
         state = self._truncated_state()

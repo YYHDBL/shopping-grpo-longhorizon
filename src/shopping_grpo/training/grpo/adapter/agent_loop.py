@@ -16,7 +16,11 @@ from shopping_grpo.environment.projection import (
     project_observation,
 )
 from shopping_grpo.training.grpo.adapter.runtime import (
+    EXPLORATION_SUFFICIENT_SCORE,
+    WRONG_PURCHASE_CARELESS_REWARD,
+    WRONG_PURCHASE_EFFORT_REWARD,
     current_runtime_state,
+    exploration_score,
     record_observation_projection,
     reward_breakdown,
     task_id_from_kwargs,
@@ -325,10 +329,33 @@ class ShoppingToolAgentLoop(ToolAgentLoop):
             jev_verdict = self._jev_grey_zone(state)
             if jev_verdict is not None and jev_verdict.get("choice") == "fully_satisfies":
                 output.reward_score = 1.0
+            # reward v4 买错细分：正常终局的 wrong_purchase 按探索充分度分档——
+            # 尽力买错 -0.45 / 草率买错 -1.00（动机与判定见 runtime.exploration_score）
+            expl_score, expl_detail = 0, {}
+            if (
+                state.get("reward_type") == "wrong_purchase"
+                and state.get("done")
+                and not state["error"]
+                and not state.get("infrastructure_invalid")
+                and jev_verdict is None  # 灰区走 Jev 通道，不叠加
+            ):
+                expl_score, expl_detail = exploration_score(state)
+                output.reward_score = (
+                    WRONG_PURCHASE_EFFORT_REWARD
+                    if expl_score >= EXPLORATION_SUFFICIENT_SCORE
+                    else WRONG_PURCHASE_CARELESS_REWARD
+                )
             output.extra_fields["shopping"] = {
                 "task_id": task_id,
                 "steps": len(state["steps"]),
                 "turns": len(state["steps"]),
+                "exploration_score": expl_score,
+                "exploration_detail": expl_detail,
+                "wrong_purchase_tier": (
+                    "effort" if output.reward_score == WRONG_PURCHASE_EFFORT_REWARD
+                    else "careless" if output.reward_score == WRONG_PURCHASE_CARELESS_REWARD
+                    else None
+                ),
                 "jev_choice": (
                     jev_verdict.get("choice") if jev_verdict is not None else None
                 ),

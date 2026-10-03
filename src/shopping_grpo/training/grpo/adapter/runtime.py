@@ -214,13 +214,51 @@ def _normal_terminal(state: dict) -> bool:
     )
 
 
-# reward v3.1（2026-09-29 定稿）：
-# - 截断档：预算耗尽未终局（token 上限或 35 步上限，error 固定为
-#   assistant_finished_without_environment_done）→ -0.5，低于早退(-0.35)、
-#   高于买错(-0.85)，堵住"拖满预算 0 分 > 礼貌收尾 -0.15"的漏洞
-# - 连续长度惩罚：不设（用户裁决 2026-09-29）——目标是预算内完成任务，
-#   长轨迹可能包含必要的搜索/比较/规格确认，仅凭步数无法判断哪些是浪费
-TRUNCATION_REWARD = -0.5
+# reward v4（2026-10-03 定稿，用户裁决）：
+# - 截断档下调：预算耗尽未终局 → -0.65（原 -0.5）。"交白卷"应比
+#   "尽力后买错"(-0.45) 更重罚——原排序被用户纠正
+# - 买错细分（本次核心改动）：wrong_purchase 按探索充分度分两档——
+#   尽力买错 -0.45 / 草率买错 -1.00。动机：v3.1 的结果导向 reward 在
+#   GRPO 中磨掉了探索倾向（run3 轨迹分析定论：探索↓接受度↑），
+#   用分数区分"有意义探索后的失败"与"没比较就赌"以恢复探索
+# - 连续长度惩罚：不设（用户裁决 2026-09-29，维持）
+TRUNCATION_REWARD = -0.65
+WRONG_PURCHASE_EFFORT_REWARD = -0.45   # 探索充分后买错
+WRONG_PURCHASE_CARELESS_REWARD = -1.00  # 未充分探索就买错
+EXPLORATION_SUFFICIENT_SCORE = 2       # 探索分 >= 2 视为"尽力"
+
+# 探索充分度的三个行为信号（用轨迹里可数的动作，不是步数——防"拖步数刷分"）：
+# 1. 打开过 >=2 个不同候选商品（比较过）
+# 2. 用过 view_* 信息页工具 >=1 次（核验过）
+# 3. 用过 >=2 个不同搜索参数（换过方向）
+# 防作弊：探索分只在买错档生效（买对不看探索，无刷分动机链）。
+_VALUED_VIEW_TOOLS = ("view_description", "view_features", "view_reviews", "view_attributes")
+
+
+def exploration_score(state: dict) -> tuple[int, dict]:
+    """轨迹探索充分度（0-3）与明细，reward v4 买错细分依据。"""
+    steps = state.get("steps") or []
+    opened = {
+        json.dumps(s.get("parameters") or {}, sort_keys=True, ensure_ascii=False)
+        for s in steps
+        if s.get("tool") == "open_product"
+    }
+    queries = {
+        json.dumps(s.get("parameters") or {}, sort_keys=True, ensure_ascii=False)
+        for s in steps
+        if s.get("tool") == "search_products"
+    }
+    verified = any(s.get("tool") in _VALUED_VIEW_TOOLS for s in steps)
+    score = (
+        (1 if len(opened) >= 2 else 0)
+        + (1 if verified else 0)
+        + (1 if len(queries) >= 2 else 0)
+    )
+    return score, {
+        "opened_candidates": len(opened),
+        "verified_information_page": bool(verified),
+        "distinct_queries": len(queries),
+    }
 
 
 def reward_breakdown(state: dict) -> dict[str, float | bool]:
