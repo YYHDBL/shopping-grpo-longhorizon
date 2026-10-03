@@ -1,0 +1,133 @@
+# 轨迹对比分析计划：RL 改变了什么行为
+
+> 日期：2026-10-03。状态：管线搭建中。数据基础已全部就位。
+
+## 一、目标
+
+回答一个具体问题：**GRPO 后的模型与 SFT 模型在同一组任务上，行为差异是什么？**
+（不只是"分数高 0.7pp"，而是"多做了什么、少做了什么、哪些行为被治好/被破坏"）
+
+## 二、数据基础（已就位，同题配对）
+
+所有评测同为冻结 1,092 题、贪婪解码、同管线：
+
+| 臂 | 轨迹路径 | 条数 |
+|---|---|---|
+| SFT | `outputs/evaluation/sft-v2-run1/trajectories.jsonl` | 1092 |
+| GRPO run1-50 | `outputs/evaluation/grpo-run1-step50/` | 1092 |
+| GRPO run2-40 | `outputs/evaluation/grpo-run2-step40/` | 1092 |
+| GRPO run3-40 | `outputs/evaluation/grpo-run3-step40/` | 1092 |
+| GRPO run3-50 | `outputs/evaluation/grpo-run3-step50/` | 1092 |
+
+每条轨迹含：完整 messages（system/user/assistant 工具调用/tool 返回）、
+`blocked_tool_calls`（守卫拒绝记录）、`steps`、`terminal_result`、
+`final_reward`、`status`、`metrics`。
+
+## 三、分析方法（三层）
+
+### L1 配对转移（定量）
+
+逐题 join 后按"严格成功"（gold_purchase）分四象限：
+
+```
+both_ok / both_fail / base_fail→cand_ok（收益题） / base_ok→cand_fail（代价题）
+```
+
+产出：转移矩阵 + 净收益题号列表。回答"净 +0.7pp 是哪些题换来的"。
+
+### L2 行为指标（定量）
+
+逐轨迹提取并对两组做分布对比：
+
+- 步数（总步数 / assistant 工具调用数）
+- 动作类型构成：search_products / click(详情) / page 操作 / purchase / 终止
+- 搜索策略：搜索次数、query 长度、重复 query 数
+- 核验深度：详情页浏览数、是否触达规格选择
+- 守卫拒绝次数（blocked_tool_calls）与拒绝类型
+- 终止类型分布（gold / partial / repeat_loop / max_steps / wrong）
+
+产出的核心对比：**分象限的行为差异**（例如"收益题里 GRPO 的搜索次数多了还是少了"）。
+
+### L3 案例深读（定性）
+
+从每象限抽 5~10 题，逐轨迹读 messages，归纳行为模式变化。
+可选：用 Jev 对批量轨迹做"行为摘要"（便宜、可规模化），再人工抽读验证。
+
+## 四、管线设计
+
+**脚本**：`scripts/compare_trajectories.py`（可复用：任意两批评测对比）
+
+```
+python scripts/compare_trajectories.py \
+  --baseline sft-v2-run1 --candidate grpo-run3-step50 \
+  [--sample-per-quadrant 8] [--out outputs/analysis/<auto>]
+```
+
+**输出**（落盘 `outputs/analysis/{baseline}_vs_{candidate}/`）：
+
+| 文件 | 内容 |
+|---|---|
+| `pairing.json` | 四象限计数 + 各象限 task_id 列表 |
+| `behavior.json` | 两组行为指标（均值/中位数/分布） |
+| `report.md` | 人类可读汇总（转移矩阵 + 行为对比表 + 首读结论） |
+| `cases.json` | 各象限抽样 task_id + 单题摘要（供 L3 深读） |
+
+## 五、执行顺序
+
+1. 搭管线（本次）→ 用 SFT vs run3-50 跑首份报告
+2. L3 案例深读（人工，1~2 小时）
+3. step60 评测完成后：加第三批数据跑同一管线（复用，分钟级）
+4. 结论写入工作总结 / 博客素材
+
+## 六、注意事项
+
+- 判断"严格成功"用 `terminal_result` 的 reward_type（与评测口径一致），
+  不用 final_reward 数值（避免 reward 版本差异）
+- 轨迹里 status=error 的题（基础设施/模型错误）在行为统计中单列，不混入
+- 对比是"同一模型不同训练阶段"的行为差异，不做因果归因超出数据支撑范围
+
+---
+
+## 七、首份分析结果（SFT vs run3-50，2026-10-03）
+
+管线 `scripts/compare_trajectories.py` 跑通，报告在
+`outputs/analysis/sft-v2-run1_vs_grpo-run3-step50/`。
+
+### 配对转移
+
+```
+both_ok   629 题    both_fail 388 题
+gain（SFT 错→GRPO 对） 41 题    loss（SFT 对→GRPO 错） 34 题
+净 +7 题（+0.64pp，与评测口径一致）
+```
+
+**净值的背后是 75 题的毛变化**（6.9% 的题翻转）——比 "Δ+0.7pp" 丰富得多。
+
+### 行为模式发现（分象限）
+
+| 指标 | gain（41 题）SFT→GRPO | loss（34 题）SFT→GRPO | both_ok（629 题） |
+|---|---|---|---|
+| 步数 | **16.8 → 12.5（-25%）** | 12.2 → 12.5（持平） | 6.44 → 6.33（±0.1） |
+| 重复动作 | **5.46 → 2.83（-48%）** | **2.47 → 3.65（+48%）** | 0.52 → 0.45 |
+| 信息页浏览 | 2.39 → 1.54（-36%） | **1.24 → 1.82（+47%）** | 0.40 → 0.36 |
+| 搜索次数 | 3.02 → 2.24（-26%） | 2.53 → 2.15（-15%） | 1.35 → 1.33 |
+| 打开商品 | 2.80 → 2.17（-22%） | 2.41 → 2.03（-16%） | 1.35 → 1.33 |
+
+**结论（首份实证）**：
+
+1. **RL 的主战场是困难题**：both_ok 的 629 题上行为几乎不变（±0.1）；
+   全部变化集中在 gain+loss 的 75 题
+2. **GRPO 的核心行为改变 = 更果断止损**：gain 象限里 SFT 平均 16.8 步、
+   5.5 次重复动作（陷在长循环里）→ GRPO 缩到 12.5 步、2.8 次重复，
+   及时换路 → 从失败翻盘（41 题）
+3. **代价 = 候选覆盖面变窄**：loss 象限里 GRPO 的搜索（-15%）与打开商品
+   （-16%）都变少——看得更深（信息页 +47%）但撒网更窄，漏掉正确商品
+   （34 题）；"核验变少导致买错"的初始假设被证伪——它其实看得更多
+4. 净效果：止损收益 > 窄搜索代价（+7 题）
+5. 全局行为变化（-25% repeat_loop / -25% 守卫拒绝 / 步数 -5%）在配对层面
+   定位到了具体机制：**在困难题上学会了"改变搜索策略而非重复尝试"**
+
+### 待办
+
+- L3 案例深读（从 gain/loss 各抽 5-8 题逐轨迹读，验证上述机制）
+- step60 评测后跑同管线加第三批数据
