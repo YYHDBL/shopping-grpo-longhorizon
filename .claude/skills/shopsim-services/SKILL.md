@@ -53,6 +53,15 @@ docker exec shopping-gpu curl -s -X POST http://127.0.0.1:5700/api/shop_agent \
 ```
 80 槽初始化要几分钟（日志 "Environment N is being initialized" 走到 79 才监听）。
 
+**⚠ kill 训练/评测后必做 `release_all`**（第 14 号坑）：被 kill 的 rollout 的 session 租约
+不会自动释放，槽位池被死租约占满 → 下一个任务（评测/训练）报
+`Unable to get available environment resource`。实测：kill run4 训练后直接起评测，
+8 题即挂（256 槽被训练遗留租约占满）。起新任务前先：
+```bash
+docker exec shopping-gpu curl -s -X POST http://127.0.0.1:5700/api/shop_agent \
+  -H 'Content-Type: application/json' -d '{"action":"release_all"}'
+```
+
 ## 4. 模型权重与训练数据
 
 | 路径 | 大小 | 用途 |
