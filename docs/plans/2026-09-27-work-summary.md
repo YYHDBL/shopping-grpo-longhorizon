@@ -512,3 +512,51 @@ run4（Reward v4 买错细分 + KL 0.005，从 run3-50 resume 跑到 step60）�
 
 **tmp 遗留**：run4 的 rollout 数据写在 outputs/rollout_data/run3/（51-60.jsonl，
 launch 脚本 sed 漏替换，记录在案）。
+
+## 三十六、四轮 GRPO 实验总表与结论（2026-10-05 定稿）
+
+### 七臂评测结果（同一冻结 1092 集、贪婪、同管线）
+
+| 臂 | 严格完成率 | 真实完成率（Jev） | repeat_loop | wrong | max_steps |
+|---|---|---|---|---|---|
+| Base（9B 零样本） | 39.0% | 52.8% | — | — | — |
+| SFT（起点） | 60.7% | 72.1% | 68 | 42 | 35 |
+| GRPO run1-50（熵爆炸中止） | 57.4% | 70.3% | 101 | 47 | 20 |
+| GRPO run2-40（太保守） | 60.3% | 71.7% | 66 | 43 | 39 |
+| **GRPO run3-40** | **61.4%** | **74.0%** | 54 | 46 | 28 |
+| **GRPO run3-50（最好）** | **61.4%** | **74.1%** | 51 | 48 | 31 |
+| GRPO run4-60（Reward v4） | 61.3% | 74.0% | 48 | 48 | 24 |
+
+### 四轮配置与结局
+
+| 轮次 | 关键配置 | 结局 |
+|---|---|---|
+| run1 | 无 KL、lr 1e-6、batch 8 | 熵爆炸（0.4→6.0）step93 中止 |
+| run2 | KL 0.01、lr 2e-7、batch 16（太保守）| 与 SFT 打平（策略未动）|
+| run3 | KL 0.003、lr 5e-7 cosine、batch 32、动态采样 | **双口径最优** |
+| run4 | run3 + Reward v4（买错细分）+ KL 0.005 | 持平；目标未达成（第三条路）|
+
+### 核心结论
+
+1. **RL 有效但增益有限**：最优 +0.7pp 严格 / +2.0pp 真实；止损改善显著
+   （repeat_loop -25%），但被"探索下降"的代价抵掉大半（41 翻盘 vs 34 翻车）
+2. **RL 的作用机制（轨迹实证）**：不是能力提升，是决策倾向偏移（探索↓、
+   接受度↑）——结果导向的 reward 在 GRPO 中自然会磨掉探索
+3. **刹车配置有安全区间**：太松（run1）= 熵爆炸；太紧（run2）= 原地踏步；
+   run3 的"轻 KL + 中 lr + 大 batch"是已验证的安全点
+4. **reward shaping 铁律**（三次验证）：①拖满预算 0 分漏洞 → ②奖励细分后
+   转投 partial 替代——改分数形状，模型总会找到设计者没设想的第三条路
+5. **"罚得狠"换不来"肯探索"**：run4 证明加重惩罚只会让模型绕路；
+   要让模型探索，需在 reward 里给"探索"正回报或保护（未验证的方向）
+
+### 产出物索引
+
+- 评测轨迹（六臂 × 1092 条）：`outputs/evaluation/{sft-v2-run1, grpo-run1-step50,
+  grpo-run2-step40, grpo-run3-step40, grpo-run3-step50, grpo-run4-step60}/`
+- 轨迹对比分析：`outputs/analysis/`（SFT vs run3-50、run3-50 vs run4-60）+ 
+  `docs/plans/2026-10-03-trajectory-analysis-plan.md`（L2+L3 方法与结论）
+- checkpoint：run3 的 10-50（`checkpoints/grpo_run3/`，50 为最优）、
+  run4 的 50-60（`checkpoints/grpo_run4/`）；合并权重
+  `outputs/models/{grpo3-40,grpo3-50,grpo4-60}-merged/`
+- 评测脚本管线：`scripts/evaluate_model.py` + `evaluate_jev.py` +
+  `compare_trajectories.py` + `deep_read_l3.py`
