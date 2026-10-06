@@ -109,3 +109,21 @@ docker exec shopping-gpu curl -s -X POST http://127.0.0.1:5700/api/shop_agent \
 11. colocate 崩溃后清显存：要连 `VLLM::EngineCore` 一起杀（不止 VLLM::Worker）
 12. GRPO checkpoint 目录比 SFT 多一层 `actor/`，合并时 `--local_dir` 指到 `global_step_N/actor`
 13. **容器僵尸堆积会杀死 NVML**：容器 PID 1 是 sleep 不收尸，训练崩溃/停止后僵尸越积越多（实测 470→1300+），NVML 初始化枚举进程时直接 "Failed to initialize NVML: Unknown Error"（宿主机正常）。解法：`docker restart shopping-gpu`（清零），然后重启环境服务（160 槽）+ ckpt-prune tmux。长训练后起任何新 GPU 进程前先 `nvidia-smi -L` 验一下
+
+## 8. 项目暂停状态（2026-10-06）
+
+**项目已暂停，卡 4-7 已归还用户自己的服务。**
+
+- `gemma-4-31B-ita`（31B，TP4，端口 18003，`NVIDIA_VISIBLE_DEVICES=4,5,6,7`）已恢复运行
+- 我们的容器 `shopping-gpu` 已 **stop（未删除）**，随时可恢复：
+
+```bash
+# 恢复项目：起容器 → 起环境服务 → 起训练（checkpoint 随时可续）
+docker start shopping-gpu
+docker exec -d shopping-gpu bash -c "cd /data/jyh-yyh/shopping-grpo-longhorizon/environments/ShopSimulator/shop_env/shop_env && SHOPSIM_ENV_SLOTS=256 SHOPSIM_PORT=5700 python3 pack_api.py > /tmp/pack_api_256.log 2>&1"
+# 训练：outputs/launch_grpo_run4.sh（resume auto，从 checkpoints/grpo_run4 最新存档续）
+# 或评测：outputs/launch_grpo_run3* 系列脚本参考
+```
+
+- **卡 0-3 的服务一直未被触碰**（gemma-it / JYHLLM 正常）
+- 恢复训练前：确认用户已同意占用卡 4-7（需临时停 gemma-4-31B-ita）
