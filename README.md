@@ -389,6 +389,8 @@ bash scripts/grpo.sh --logger swanlab
 - [Final-200 Clean 测试集说明](docs/evaluation-dataset.md)
 - [Final-200 Benchmark Dashboard（历史）](docs/evaluation-dashboard.html)
 - [Reward v3 设计](docs/reward-v3.md)
+- [可选 A–G 组件与开关边界](docs/component-harness.md)
+- [完整消融结果与证据限制](docs/component-evaluation.md)
 - [可审计实验结果](experiments/comparison.md)
 
 ## 后续改进计划
