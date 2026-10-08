@@ -550,7 +550,8 @@ def main():
     )
     result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model(str(args.output))
-    chat_template.save_pretrained(str(args.output))
+    if trainer.is_world_process_zero():
+        chat_template.save_pretrained(str(args.output))
 
     # --- 训练完成摘要 ---
     total_time = _time.time() - _start_time
@@ -587,10 +588,11 @@ def main():
     print(f"  adapter → {args.output}")
     print(f"{'='*60}\n")
 
-    (args.output / "train_summary.json").write_text(
-        json.dumps(train_summary, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
+    if trainer.is_world_process_zero():
+        (args.output / "train_summary.json").write_text(
+            json.dumps(train_summary, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
 
     print(f"LoRA adapter 已保存到 {args.output}")
 

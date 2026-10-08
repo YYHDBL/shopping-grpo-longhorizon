@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import math
-
+import os
 
 OBSERVATION_VERSION = "shopping-observation-v2"
 
@@ -92,6 +91,19 @@ def build_observation_state(
         }
         if session.get("selected_price") is not None:
             state["selected_price"] = session["selected_price"]
+        if os.environ.get("SHOPSIM_PUBLIC_SUPPORT") == "1" and page_type == "product_detail":
+            # Public catalog fields only. Never inspect goal/instructions/reward.
+            selected = state["selected_options"]
+            state["public_details"] = {
+                "description": product.get("Description") or "",
+                "features": product.get("BulletPoints") or [],
+                "unselected_axes": [k for k,v in state["available_options"].items() if v and k not in selected],
+                "option_prices": {v: p for v,p in (product.get("option_to_price") or {}).items() if p is not None} if sum(len(v) for v in state["available_options"].values()) <= 20 else {},
+                "price_note": "单项报价只作比较，多轴最终组合以选择后的price为准；空白描述不代表功能满足。",
+            }
+            from web_agent_site.engine.public_option_evidence import option_evidence
+            evidence=option_evidence(product)
+            if evidence: state['public_details']['option_evidence']=evidence
         if page_type == "information_subpage":
             subpage = str(session.get("subpage") or "information")
             field = {

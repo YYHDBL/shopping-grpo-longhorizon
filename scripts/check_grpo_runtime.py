@@ -10,7 +10,6 @@ import sys
 from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 
-
 EXPECTED_VERSIONS = {
     "verl": "0.8.0",
     "vllm": "0.25.1",
@@ -134,7 +133,7 @@ def compose_runtime_config(overrides):
         raise SystemExit(f"cannot parse GRPO config before preflight: {exc}") from exc
 
     GlobalHydra.instance().clear()
-    config_dir = Path(__file__).resolve().parents[1] / "configs"
+    config_dir = Path(os.environ.get("GRPO_CONFIG_DIR", Path(__file__).resolve().parents[1] / "configs"))
     config_name = os.environ.get("GRPO_CONFIG_NAME", "grpo")
     with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
         return compose(config_name=config_name, overrides=list(overrides))
@@ -150,8 +149,28 @@ def validate_transformers_revision():
         )
     try:
         metadata = json.loads(direct_url.read_text(encoding="utf-8"))
-        revision = metadata["vcs_info"]["commit_id"]
-    except (OSError, KeyError, json.JSONDecodeError) as exc:
+        if "vcs_info" in metadata:
+            revision = metadata["vcs_info"]["commit_id"]
+        else:
+            # The existing SFT runtime was installed from this frozen source archive.
+            import hashlib
+            import tarfile
+            from urllib.parse import unquote, urlparse
+            parsed = urlparse(metadata.get("url", ""))
+            if parsed.scheme != "file":
+                raise ValueError("Transformers must have a pinned VCS revision or verified local archive")
+            archive = Path(unquote(parsed.path))
+            expected_archive = os.environ.get("SHOPPING_TRANSFORMERS_ARCHIVE_SHA256", "")
+            if len(expected_archive) != 64 or any(c not in "0123456789abcdef" for c in expected_archive):
+                raise ValueError("Set SHOPPING_TRANSFORMERS_ARCHIVE_SHA256 for an explicitly verified archive")
+            if hashlib.sha256(archive.read_bytes()).hexdigest() != expected_archive:
+                raise ValueError("Transformers source archive hash mismatch")
+            with tarfile.open(archive) as tar:
+                roots = {m.name.split("/")[0] for m in tar.getmembers()}
+            if roots != {"transformers-" + EXPECTED_TRANSFORMERS_REVISION}:
+                raise ValueError("Transformers archive revision mismatch")
+            revision = EXPECTED_TRANSFORMERS_REVISION
+    except (OSError, KeyError, ValueError) as exc:
         raise SystemExit(f"invalid Transformers direct_url.json: {exc}") from exc
     if revision != EXPECTED_TRANSFORMERS_REVISION:
         raise SystemExit(
@@ -442,13 +461,14 @@ def main():
     try:
         import torch
         import verl
-        from verl.experimental.agent_loop.tool_parser import ToolParser
         from verl.experimental.agent_loop.tool_agent_loop import AgentState, ToolAgentLoop
+        from verl.experimental.agent_loop.tool_parser import ToolParser
+        from verl.tools.base_tool import BaseTool
+        from verl.utils.tracking import Tracking
+
         from shopping_grpo.training.grpo.adapter.agent_loop import ShoppingToolAgentLoop
         from shopping_grpo.training.grpo.adapter.tools import ShopSimulatorTool
         from shopping_grpo.training.grpo.compat import install_torch_padding_fallback
-        from verl.tools.base_tool import BaseTool
-        from verl.utils.tracking import Tracking
     except ImportError as exc:
         raise SystemExit(
             "incompatible veRL 0.8 install: required AgentLoop/Tool APIs are unavailable; "

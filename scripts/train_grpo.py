@@ -45,6 +45,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--experiment-name", default="shopping-agent-grpo")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--agent-config", type=Path, default=DEFAULT_AGENT_CONFIG)
+    parser.add_argument("--tool-config", type=Path, default=DEFAULT_TOOL_CONFIG)
     parser.add_argument(
         "hydra_overrides",
         nargs=argparse.REMAINDER,
@@ -84,10 +87,10 @@ def build_command(args: argparse.Namespace) -> tuple[list[str], dict[str, str]]:
     environment = dict(os.environ)
     environment.update(
         {
-            "PYTHONPATH": str(ROOT / "src"),
+            "PYTHONPATH": os.pathsep.join(filter(None,[str(ROOT / "src"),os.environ.get("PYTHONPATH", "")])),
             "SHOPPING_GRPO_ROOT": str(ROOT),
             "SHOPPING_ENVIRONMENT_VERSION": "shopsimulator-environment-v2.1",
-            "SHOPPING_ENV_MANIFEST": str(DEFAULT_MANIFEST),
+            "SHOPPING_ENV_MANIFEST": str(_validated_path(args.manifest, "environment manifest")),
             "GRPO_MODEL_PATH": str(model),
             "GRPO_TRAIN_FILE": str(train_data),
             "GRPO_VAL_FILE": str(val_data),
@@ -96,9 +99,10 @@ def build_command(args: argparse.Namespace) -> tuple[list[str], dict[str, str]]:
                 output / "training_diagnostics.jsonl"
             ),
             "SHOPSIM_BASE_URL": str(args.env_url),
-            "SHOPPING_AGENT_LOOP_CONFIG": str(DEFAULT_AGENT_CONFIG),
-            "SHOPPING_TOOL_CONFIG": str(DEFAULT_TOOL_CONFIG),
+            "SHOPPING_AGENT_LOOP_CONFIG": str(_validated_path(args.agent_config, "agent config")),
+            "SHOPPING_TOOL_CONFIG": str(_validated_path(args.tool_config, "tool config")),
             "GRPO_CONFIG_NAME": config.stem,
+            "GRPO_CONFIG_DIR": str(config.parent),
         }
     )
     if args.logger == "swanlab":
@@ -152,8 +156,7 @@ def main() -> None:
     preflight = [
         sys.executable,
         str(ROOT / "scripts/check_grpo_runtime.py"),
-        *overrides,
-        *extra,
+        *command[5:],
     ]
     preflight_status = subprocess.call(preflight, cwd=ROOT, env=environment)
     if preflight_status:

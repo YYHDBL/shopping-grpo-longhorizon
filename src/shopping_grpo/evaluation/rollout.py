@@ -10,26 +10,33 @@ import time
 import traceback
 from datetime import datetime, timezone
 from http.client import RemoteDisconnected
-from urllib.error import URLError
 from pathlib import Path
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from shopping_grpo.environment.actions import action_guard_tool_message, action_reject_reason
+from shopping_grpo.environment.budget import check_purchase_budget
+from shopping_grpo.environment.client import ShopAgentEnv, ShopEnvironmentError, ShopHttpError
 from shopping_grpo.environment.context import (
     ContextBudgetError,
     VllmChatTokenCounter,
     VllmTextTokenCounter,
     compact_chat_messages,
 )
+from shopping_grpo.environment.observation import render_structured_observation
 from shopping_grpo.environment.projection import project_observation
-from shopping_grpo.environment.client import ShopAgentEnv, ShopEnvironmentError, ShopHttpError
+from shopping_grpo.environment.public_support import (
+    available_schemas,
+    purchase_check,
+    recovery_message,
+    resolve_option_call,
+)
 from shopping_grpo.environment.tools import (
     SHOP_TOOL_SCHEMAS,
     tool_call_to_action,
 )
-from shopping_grpo.environment.observation import render_structured_observation
-
+from shopping_grpo.evaluation.paired_audit import terminal_for_policy
 
 SYSTEM_PROMPT = """你是一个购物 Agent，负责在 ShopSimulator 中替用户完成一次单轮购物任务。
 
@@ -279,8 +286,15 @@ def collect_for_task(
     max_steps=30,
     tools=None,
     attempt_index=0,
+    budget_guard=False,
+    public_support=False,
+    option_labels=False,
+    system_prompt=None,
+    reward_policy="environment",
 ):
     """执行一个任务并返回完整轨迹；所有异常都会被写入轨迹后再释放环境。"""
+    if reward_policy not in {"environment", "original"}:
+        raise ValueError("unknown reward policy")
     trajectory = {
         "trajectory_id": str(uuid4()),
         "task_id": int(task["task_id"]),
@@ -290,6 +304,10 @@ def collect_for_task(
         "messages": [],
         "steps": [],
         "blocked_tool_calls": [],
+        "budget_checks": [],
+        "public_support": bool(public_support),
+        "option_labels": bool(option_labels),
+        "public_support_events": [],
         "tool_call_truncations": [],
         "context_compactions": [],
         "context_turn_tokens": [],
@@ -314,14 +332,22 @@ def collect_for_task(
             )
         trajectory["initial_result"] = initial
         messages = _initial_messages(task, initial)
+        if system_prompt is not None:
+            messages = [dict(m) for m in messages]
+            for message in messages:
+                if message.get("role") == "system":
+                    message["content"] = system_prompt
+                    break
         trajectory["messages"] = messages
+        budget_instruction = initial.get("instruction", "")
         tool_schemas = tools or SHOP_TOOL_SCHEMAS
         consecutive_blocked_calls = 0
         latest_observation_truncated = False
 
         while len(trajectory["steps"]) < int(max_steps):
             # 先请求模型，再校验动作；工具结果会追加到 messages，成为下一轮上下文。
-            assistant = client.complete(messages, tool_schemas)
+            turn_schemas = available_schemas(tool_schemas, latest_observation, option_labels=option_labels) if public_support else tool_schemas
+            assistant = client.complete(messages, turn_schemas)
             context_tokens = getattr(client, "last_context_tokens", None)
             if context_tokens is not None:
                 trajectory["context_turn_tokens"].append(
@@ -353,6 +379,11 @@ def collect_for_task(
                 trajectory["status"] = "assistant_final"
                 break
             tool_call = tool_calls[0]
+            if public_support:
+                tool_call, resolution = resolve_option_call(tool_call, latest_observation)
+                if resolution:
+                    trajectory["public_support_events"].append({"step_index": len(trajectory["steps"]), "tool_call_id": tool_call.get("id"), **resolution})
+                    assistant = dict(assistant, tool_calls=[tool_call])
             try:
                 name, arguments = _tool_call_name_args(tool_call)
                 reason = action_reject_reason(
@@ -362,6 +393,18 @@ def collect_for_task(
                 )
             except Exception as exc:
                 reason = f"invalid_tool_call:{exc.__class__.__name__}"
+            support_check = None
+            if not reason and public_support and name == "buy_now":
+                support_check = purchase_check(budget_instruction, latest_observation)
+                trajectory["public_support_events"].append({"step_index": len(trajectory["steps"]), "tool_call_id": tool_call.get("id"), **support_check})
+                reason = support_check["reason"]
+            budget_check = None
+            if not reason and budget_guard and name == "buy_now":
+                budget_check = check_purchase_budget(budget_instruction, latest_observation)
+                budget_check["step_index"] = len(trajectory["steps"])
+                budget_check["tool_call_id"] = tool_call.get("id")
+                trajectory["budget_checks"].append(budget_check)
+                reason = budget_check["reason"]
             if reason:
                 consecutive_blocked_calls += 1
                 trajectory["blocked_tool_calls"].append(
@@ -374,7 +417,15 @@ def collect_for_task(
                     }
                 )
                 messages.append(assistant)
-                messages.append(action_guard_tool_message(tool_call, reason, latest_observation))
+                guard_message = action_guard_tool_message(tool_call, reason, latest_observation)
+                if budget_check is not None and budget_check["feedback"]:
+                    guard_message["content"] = budget_check["feedback"]
+                    guard_message["runtime_budget_guard"] = True
+                if public_support:
+                    guard_message["content"] += "\n" + recovery_message(latest_observation, reason)
+                    if support_check and support_check["feedback"]:
+                        guard_message["content"] += "\n" + support_check["feedback"]
+                messages.append(guard_message)
                 if consecutive_blocked_calls >= MAX_BLOCKED_TOOL_CALLS:
                     trajectory["status"] = "invalid_action_limit"
                     break
@@ -405,6 +456,11 @@ def collect_for_task(
             )
             messages.append(_tool_message(tool_call, step))
             if step["done"]:
+                # Persist the raw terminal before selecting a scoring policy, including errors.
+                trajectory["terminal_result"] = step["result"]
+                if reward_policy == "original":
+                    step["result"] = terminal_for_policy(step["result"], reward_policy)
+                    step["reward"] = step["result"].get("reward", step["reward"])
                 trajectory["status"] = "done"
                 trajectory["terminal_result"] = step["result"]
                 trajectory["final_reward"] = step["reward"]
@@ -458,6 +514,11 @@ def collect_tasks(
     max_steps=30,
     env_factory=ShopAgentEnv,
     attempts_per_task=1,
+    budget_guard=False,
+    public_support=False,
+    option_labels=False,
+    system_prompt=None,
+    reward_policy="environment",
 ):
     attempts_per_task = int(attempts_per_task)
     if attempts_per_task < 1:
@@ -476,6 +537,11 @@ def collect_tasks(
                 base_url=base_url,
                 max_steps=max_steps,
                 attempt_index=attempt_index,
+                budget_guard=budget_guard,
+                public_support=public_support,
+                option_labels=option_labels,
+                system_prompt=system_prompt,
+                reward_policy=reward_policy,
             )
             append_jsonl(output_path, [trajectory])
             written.append(trajectory)

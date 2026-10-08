@@ -2,11 +2,12 @@
 """在固定 ShopSimulator benchmark 上评测 OpenAI-compatible 本地或远端模型。"""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
-from shopping_grpo.evaluation.summary import summarize_trajectories
 from shopping_grpo.evaluation.rollout import OpenAIChatClient, collect_tasks, load_tasks
+from shopping_grpo.evaluation.summary import summarize_trajectories
 
 
 def parse_args():
@@ -49,7 +50,18 @@ def parse_args():
     parser.add_argument("--observation-detail-token-budget", type=int, default=4096)
     parser.add_argument("--observation-generic-token-budget", type=int, default=768)
     parser.add_argument("--observation-search-top-k", type=int, default=20)
-    return parser.parse_args()
+    parser.add_argument("--budget-guard", action="store_true")
+    parser.add_argument("--public-support", action="store_true",
+                        help="Filter current-page tools and check purchase prerequisites.")
+    parser.add_argument("--option-labels", action="store_true",
+                        help="Use exact option labels instead of page-local IDs.")
+    parser.add_argument("--system-prompt", type=Path,
+                        help="Explicit replacement system prompt; default remains upstream.")
+    parser.add_argument("--reward-policy", choices=["environment", "original"], default="environment")
+    args = parser.parse_args()
+    if args.option_labels and not args.public_support:
+        parser.error("--option-labels requires --public-support")
+    return args
 
 
 def _read_jsonl(path):
@@ -95,6 +107,11 @@ def main():
         output_path=args.output,
         base_url=args.base_url,
         max_steps=args.max_steps,
+        reward_policy=args.reward_policy,
+        budget_guard=args.budget_guard,
+        public_support=args.public_support,
+        option_labels=args.option_labels,
+        system_prompt=args.system_prompt.read_text() if args.system_prompt else None,
     )
     summary = summarize_trajectories(
         [task["task_id"] for task in tasks], _read_jsonl(args.output)
@@ -104,6 +121,11 @@ def main():
         "model": args.model,
         "reward_contract": "shopsimulator-reward-v3",
         "max_steps": args.max_steps,
+        "reward_policy": args.reward_policy,
+        "budget_guard": args.budget_guard,
+        "public_support": args.public_support,
+        "option_labels": args.option_labels,
+        "system_prompt_sha256": hashlib.sha256(args.system_prompt.read_bytes()).hexdigest() if args.system_prompt else None,
         "max_tokens": args.max_tokens,
         "temperature": args.temperature,
         "top_p": args.top_p,

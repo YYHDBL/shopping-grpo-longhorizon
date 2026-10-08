@@ -10,7 +10,6 @@ import re
 from shopping_grpo.environment.product_id import PRODUCT_ID_CAPTURE
 from shopping_grpo.environment.tools import SHOP_TOOL_SCHEMAS, tool_call_to_action
 
-
 RUNTIME_GUARD_FIELD = "runtime_action_guard"
 NAVIGATION_BUTTONS = {
     "description",
@@ -94,7 +93,9 @@ def action_guard_tool_message(tool_call, reason, observation):
     if "back to search" in normalized_targets:
         return_tools.append("back_to_search")
     only_return_buttons = bool(normalized_targets) and normalized_targets <= {"< prev", "back to search"}
-    if only_return_buttons:
+    if reason == "search_not_available_on_current_page" and "back to search" in normalized_targets:
+        correction = "当前页面不能搜索。先调用 back_to_search({})，看到搜索功能可用后再调用 search_products。"
+    elif only_return_buttons:
         correction = f"你处于信息子页，下一步只能调用 {' 或 '.join(return_tools)}。"
     else:
         correction = "下一步只能从当前页面列出的目标中选择。"

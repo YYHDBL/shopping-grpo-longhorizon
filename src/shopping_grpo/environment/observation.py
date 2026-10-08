@@ -31,7 +31,10 @@ def _list(value):
 
 
 def _footer(state):
-    actions = _list(state.get("actions"))
+    # Action labels are executable identifiers, not prose. Preserve whitespace.
+    actions = state.get("actions") or []
+    if not isinstance(actions, list) or not all(isinstance(action, str) for action in actions):
+        raise StructuredObservationError("actions must be a list of strings")
     return [
         f"搜索功能是否可用: {bool(state.get('search_available'))}",
         "可点击的按钮: " + json.dumps(actions, ensure_ascii=False),
@@ -138,4 +141,10 @@ def _render_product(state):
         "available_options: "
         + json.dumps(state.get("available_options") or {}, ensure_ascii=False, sort_keys=True),
     ]
+    public = state.get("public_details")
+    if isinstance(public, Mapping):
+        # Whitelist public fields; unknown/hidden payload keys are not rendered.
+        for key in ("description", "features", "unselected_axes", "option_prices", "price_note", "option_evidence"):
+            if key in public:
+                lines.append("public_" + key + ": " + json.dumps(public[key], ensure_ascii=False))
     return lines
