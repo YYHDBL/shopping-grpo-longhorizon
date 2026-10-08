@@ -1,0 +1,11 @@
+{
+ "tasks": {
+  "accepted": 5852,
+  "teacher_hard": 727
+ },
+ "usage_total": {
+  "input": 478186304,
+  "output": 8711545,
+  "cached": 533219922
+ }
+}
