@@ -128,11 +128,12 @@ class EnhancedVerlTest(unittest.TestCase):
             make_runtime_state,
         )
 
-        async def run(purchase, interface):
+        async def run(purchase, interface, observation=None):
             state = make_runtime_state(task_id=1, max_steps=35)
             state.update(
                 task_instruction="不超过10元",
-                latest_observation=(
+                latest_observation=observation
+                or (
                     "page_type: product_detail\nprice: 20\navailable_options: {}\n"
                     'selected_options: {}\n可点击的按钮: ["Buy Now"]'
                 ),
@@ -154,6 +155,11 @@ class EnhancedVerlTest(unittest.TestCase):
                 await tool.execute("test", {})
                 self.assertEqual(len(calls), 0 if purchase else 1)
                 self.assertEqual(state["guard_rejection_count"], int(purchase))
+                if observation is not None:
+                    self.assertEqual(
+                        state["guard_rejection_reason_counts"], {"variant_state_unreadable": 1}
+                    )
+                    self.assertEqual(state["steps"], [])
             finally:
                 current_runtime_state.reset(st)
                 current_environment.reset(et)
@@ -161,3 +167,17 @@ class EnhancedVerlTest(unittest.TestCase):
         for purchase in (False, True):
             for interface in (False, True):
                 asyncio.run(run(purchase, interface))
+
+        for interface in (False, True):
+            for options in (
+                "selected_options: {}",
+                "available_options: {}",
+                'available_options: {"颜色":\nselected_options: {}',
+                'available_options: {"颜色":["红"]}\nselected_options: invalid',
+            ):
+                observation = (
+                    "page_type: product_detail\nprice: 5\n"
+                    + options
+                    + '\n可点击的按钮: ["Buy Now"]'
+                )
+                asyncio.run(run(True, interface, observation))

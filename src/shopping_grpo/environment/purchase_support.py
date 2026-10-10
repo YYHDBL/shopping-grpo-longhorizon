@@ -8,7 +8,7 @@ from shopping_grpo.environment.budget import check_purchase_budget
 
 
 def field(observation, name, default=None):
-    match = re.search(r"^" + re.escape(name) + r":\s*([^\n]*)$", observation, re.MULTILINE)
+    match = re.search(r"^" + re.escape(name) + r":[ \t]*([^\n]*)$", observation, re.MULTILINE)
     if not match:
         return default
     try:
@@ -18,9 +18,23 @@ def field(observation, name, default=None):
 
 
 def purchase_check(instruction, observation):
-    available = field(observation, "available_options", {})
-    selected = field(observation, "selected_options", {})
-    if not isinstance(available, dict) or not isinstance(selected, dict):
+    # Missing or malformed JSON is unknown, not an explicitly empty option map.
+    available = field(observation, "available_options")
+    selected = field(observation, "selected_options")
+    if (
+        not isinstance(available, dict)
+        or not isinstance(selected, dict)
+        or any(
+            not axis.strip()
+            or not isinstance(values, list)
+            or any(not isinstance(value, str) or not value.strip() for value in values)
+            for axis, values in available.items()
+        )
+        or any(
+            axis not in available or not isinstance(value, str) or value not in available[axis]
+            for axis, value in selected.items()
+        )
+    ):
         return {
             "reason": "variant_state_unreadable",
             "feedback": "无法读取当前规格状态，购买未执行。请重新打开商品核验。",
