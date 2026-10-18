@@ -28,6 +28,17 @@
 - 看点：**RL 的行为改变不是"更努力"而是"更精准"**——同样的步数、同样的流程，
   搜索词的质量不同
 
+## `grpo_run4_step60_sample30.jsonl`
+
+GRPO run4（step60）在冻结评测集上的 **31 条分层抽样轨迹**（原始文件 1,092 条、
+121M，超过 GitHub 单文件限制，故抽样上传）。
+
+- 抽样方法：按 `reward_type` 分层，各类目内按 `task_id` 等间隔取——覆盖全部 8 类终局
+- 配额：gold 10 / partial 替代 7 / wrong 4 / repeat_loop 4 / max_steps 2 /
+  unverifiable 2 / unknown 1 / valid_alternative 1
+- 用途：查看训练后模型的真实轨迹形态；与 `flip_case_*` 对照可看"翻盘"的完整对话
+- 每行一条 JSON，字段见下节
+
 ## `trajectories.jsonl`
 
 早期（V1 时代）的示例文件，保留作历史参考。
