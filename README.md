@@ -39,9 +39,9 @@ Agent 不能只生成一句“推荐购买某商品”，而是必须真正与�
 5. 购买满足约束的商品，或者在证据充分时合理终止。
 
 这类任务同时考察指令理解、工具调用、长上下文管理、约束满足和终止决策。项目内嵌
-了冻结的 ShopSimulator Environment v2.1 源码和商品数据，位于
-[`environments/ShopSimulator/`](environments/ShopSimulator/)，不需要用户再单独
-克隆或修改一份环境仓库。
+了冻结的 ShopSimulator Environment v2.1 源码和商品数据。上游实现见
+[ShopSimulator 官方仓库](https://github.com/ShopAgent-Team/ShopSimulator)，本项目使用的
+内嵌版本记录在 [`EMBEDDED_SOURCE.json`](environments/ShopSimulator/EMBEDDED_SOURCE.json)。
 
 ![ShopSimulator 环境概览](docs/images/shopsimulator-overview.png)
 
