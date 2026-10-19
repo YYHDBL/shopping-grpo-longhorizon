@@ -412,10 +412,9 @@ bash scripts/grpo.sh --logger swanlab
 
 ## 引用与致谢
 
-本项目建立在
-[ShopSimulator 论文](https://arxiv.org/pdf/2601.18225)及其开源环境、
-[veRL](https://github.com/verl-project/verl) 和
-[Qwen](https://github.com/QwenLM/Qwen3) 之上。
+本项目建立在 [ShopSimulator 论文](https://arxiv.org/abs/2601.18225)、其[官方代码与数据仓库](https://github.com/ShopAgent-Team/ShopSimulator)、[veRL](https://github.com/verl-project/verl) 和 [Qwen](https://github.com/QwenLM/Qwen3) 之上。
+
+本仓库内嵌了 ShopSimulator 的运行环境、模板、静态资源和压缩商品数据。上游来源提交记录见 [`environments/ShopSimulator/EMBEDDED_SOURCE.json`](environments/ShopSimulator/EMBEDDED_SOURCE.json)。感谢 ShopSimulator 作者团队开放环境与数据。
 
 评测协议和 Benchmark 构建还参考了
 [VitaBench: Benchmarking LLM Agents with Versatile Interactive Tasks in Real-world Applications](https://arxiv.org/pdf/2509.26490)
