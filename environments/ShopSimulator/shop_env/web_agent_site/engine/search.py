@@ -7,16 +7,16 @@ pre-tokenized so Chinese lookup does not depend on a machine-local tokenizer.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import hashlib
 import json
 import math
-from pathlib import Path
 import platform
 import re
 import sqlite3
 import unicodedata
-
+from dataclasses import dataclass
+from pathlib import Path
+from threading import RLock
 
 SEARCH_VERSION = "shopsimulator-multifield-bm25-v2"
 INDEX_SCHEMA_VERSION = 1
@@ -95,10 +95,10 @@ def product_fields(product: dict) -> dict[str, str]:
     title = str(product.get("title") or product.get("Title") or "")
     brand = str(product.get("brand") or product.get("shop_name") or "")
     category = str(product.get("category") or product.get("product_category") or "")
-    attributes = " ".join(
-        _flatten(product.get("attribute") or product.get("Attributes") or [])
+    attributes = " ".join(_flatten(product.get("attribute") or product.get("Attributes") or []))
+    options = " ".join(
+        _flatten(product.get("customization_options") or product.get("options") or {})
     )
-    options = " ".join(_flatten(product.get("customization_options") or product.get("options") or {}))
     bullets = " ".join(
         _flatten(
             product.get("small_description")
@@ -220,6 +220,7 @@ class MultiFieldBM25Searcher:
     """Read-only, deterministic search interface used by SimServer."""
 
     def __init__(self, index_path: str | Path, *, expected_product_sha256: str | None = None):
+        self._connection_lock = RLock()
         self.index_path = Path(index_path).resolve()
         if not self.index_path.is_file():
             raise SearchIndexError(
@@ -249,27 +250,30 @@ class MultiFieldBM25Searcher:
         self.weights = _validated_weights(self.manifest["field_weights"])
 
     def search(self, query: object, k: int = 150) -> list[SearchHit]:
-        tokens = search_tokens(query)
-        if not tokens or int(k) <= 0:
-            return []
-        weight_values = [self.weights[field] for field in FIELDS]
-        weight_placeholders = ", ".join("?" for _ in weight_values)
-        rows = self._connection.execute(
-            f"SELECT asin, bm25(products, {weight_placeholders}) AS score FROM products "
-            "WHERE products MATCH ? ORDER BY score ASC, asin ASC LIMIT ?",
-            (*weight_values, _fts_query(tokens), int(k)),
-        ).fetchall()
-        return [
-            SearchHit(asin=row["asin"], score=-float(row["score"]), rank=index)
-            for index, row in enumerate(rows, start=1)
-        ]
+        with self._connection_lock:
+            tokens = search_tokens(query)
+            if not tokens or int(k) <= 0:
+                return []
+            weight_values = [self.weights[field] for field in FIELDS]
+            weight_placeholders = ", ".join("?" for _ in weight_values)
+            rows = self._connection.execute(
+                f"SELECT asin, bm25(products, {weight_placeholders}) AS score FROM products "
+                "WHERE products MATCH ? ORDER BY score ASC, asin ASC LIMIT ?",
+                (*weight_values, _fts_query(tokens), int(k)),
+            ).fetchall()
+            return [
+                SearchHit(asin=row["asin"], score=-float(row["score"]), rank=index)
+                for index, row in enumerate(rows, start=1)
+            ]
 
     def contains_asin(self, asin: object) -> bool:
-        row = self._connection.execute(
-            "SELECT 1 FROM products WHERE asin = ? LIMIT 1",
-            (str(asin),),
-        ).fetchone()
-        return row is not None
+        with self._connection_lock:
+            row = self._connection.execute(
+                "SELECT 1 FROM products WHERE asin = ? LIMIT 1",
+                (str(asin),),
+            ).fetchone()
+            return row is not None
 
     def close(self):
-        self._connection.close()
+        with self._connection_lock:
+            self._connection.close()

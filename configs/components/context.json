@@ -1,0 +1,5 @@
+{
+  "context_compaction_enable": true,
+  "context_input_budget_tokens": 22016,
+  "context_generation_reserve_tokens": 2048
+}

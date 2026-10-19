@@ -377,6 +377,8 @@ bash scripts/grpo.sh --logger swanlab
 - [Final-200 Clean evaluation dataset](docs/evaluation-dataset.md)
 - [Final-200 Benchmark Dashboard (historical)](docs/evaluation-dashboard.html)
 - [Reward v3 design](docs/reward-v3.md)
+- [Optional A–G component harness](docs/component-harness.md)
+- [Component evaluation evidence and limitations](docs/component-evaluation.md)
 - [Auditable experiment results](experiments/comparison.md)
 
 ## Future improvement plan
