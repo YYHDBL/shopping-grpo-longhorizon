@@ -1,0 +1,5 @@
+{
+  "observation_token_budget": 8192,
+  "observation_detail_token_budget": 8192,
+  "observation_generic_token_budget": 8192
+}
