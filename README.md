@@ -344,6 +344,7 @@ experiments/
   baseline/                      Baseline 配置与结果
   sft/                           SFT 配置与结果
   grpo/                          GRPO 配置与结果
+examples/v2-trajectory-samples/  V2 Teacher、GRPO 训练和评测轨迹样例
 scripts/                         面向用户的薄入口脚本
 src/shopping_grpo/
   collection/                    Teacher 轨迹验收与 SFT 数据构造
